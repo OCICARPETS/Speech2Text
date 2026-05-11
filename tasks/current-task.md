@@ -1,15 +1,24 @@
 # Current Task — Speech2Text
 
-*Letzte Aktualisierung: 2026-05-09 (Session 7 — Variante B verifiziert; Hotkey-Layer-Ausbau Schritt 6 implementiert + live-validiert)*
+*Letzte Aktualisierung: 2026-05-11 (Session 8 — GitHub-Repo OCICARPETS/Speech2Text angelegt, v1.1 als Release)*
 *Zu lesen am Anfang jeder Session — siehe `CLAUDE.md` Arbeitsregel 1.*
 
 ---
 
 ## Aktueller Stand
 
-**Phase:** ✅ **v1.1 stable.** Hotkey-Layer-Ausbau (Schritt 6) abgeschlossen und live-validiert: Capture-Dialog für freie Hotkey-Belegung, optionaler Push-to-Talk-Hotkey pro Modus, Cycle-Hotkey für Modus-Durchschaltung. Variante-B-Distribution-ZIP nach v1.1 erneuert.
+**Phase:** ✅ **v1.1 stable + auf GitHub.** Hotkey-Layer-Ausbau (Schritt 6) live-validiert, Variante-B-Distribution-ZIP v1.1 erneuert. Quellcode liegt seit 2026-05-11 unter https://github.com/OCICARPETS/Speech2Text (privat). Distribution-ZIP wird über GitHub Releases verteilt (nicht mehr im Repo-Tracking).
 
 **Sessions bisher (2026-04-24):**
+
+*Session 8 (2026-05-11) — GitHub-Repo + Release-Workflow:*
+- **Repo angelegt:** `https://github.com/OCICARPETS/Speech2Text` (privat, Default-Branch `master` analog AussendienstAPP).
+- **Initial Commit (4c2c32f):** 45 Dateien, 6122 Zeilen — alle Sources, Doku, Scripts, Projektplanung.
+- **`.gitignore` ergänzt:** `build/`, `tools/Ahk2Exe/`, `dist/` (alle Distribution-Outputs raus aus Tracking — ZIPs werden über Releases verteilt). Frühere Variante hatte die v1.1-ZIP mit-committet, wurde nach erstem Push wieder herausgenommen.
+- **Release-Workflow:** Pro Version Tag `vX.Y` setzen + Release über GitHub-Web-UI anlegen + `Speech2Text-vX.Y.zip` als Asset hochladen. Repo bleibt schlank, Binaries hängen am Release.
+- **Tag `v1.1`** auf Commit nach ZIP-Removal gesetzt + gepusht. Release-Anlage per Web-UI (kein `gh`-CLI auf Workstation installiert).
+
+*Sessions bisher (2026-04-24):*
 
 *Session 1 — Setup + MVP-Validierung:*
 - Projektstruktur + 6 Feature-Spezifikationen

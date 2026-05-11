@@ -22,5 +22,6 @@ Thumbs.db
 build/
 tools/Ahk2Exe/
 
-# Distribution: entpackte Bundles ignorieren, ZIPs bleiben getrackt
-dist/Speech2Text-*/
+# Distribution: alle Build-Outputs raus. ZIPs werden über GitHub Releases verteilt,
+# nicht im Repo getrackt.
+dist/
