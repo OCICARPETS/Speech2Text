@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.venv/Scripts/python.exe -m py_compile src/config.py src/recorder.py)",
+      "Bash(.venv/Scripts/python.exe -c \"import sys; sys.path.insert\\(0, 'src'\\); import config; print\\('Modi:', list\\(config.MODES.keys\\(\\)\\)\\); print\\('Default:', config.DEFAULT_MODE\\); print\\('Config-Pfad:', config.config_path\\(\\)\\); print\\('Roundtrip-Test:'\\); enc = config.dpapi_encrypt\\('sk-test-dummy-key-12345'\\); print\\('  verschlüsselt \\(Base64-Länge\\):', len\\(enc\\)\\); dec = config.dpapi_decrypt\\(enc\\); print\\('  entschlüsselt:', dec\\); assert dec == 'sk-test-dummy-key-12345', 'Roundtrip fehlgeschlagen'; print\\('  OK'\\)\")",
+      "Bash(netstat -ano)",
+      "Bash(findstr :17321)",
+      "Bash(findstr -i pythonw)",
+      "Bash(findstr -i python.exe)",
+      "Bash(findstr /i \"pythonw python recorder\")",
+      "PowerShell(Get-CimInstance *)",
+      "PowerShell(Get-NetTCPConnection *)",
+      "PowerShell(Stop-Process *)",
+      "PowerShell(Start-Sleep -Seconds 2 ; Write-Output \"=== /health \\(3 Versuche\\) ===\" ; 1..3 | ForEach-Object { Write-Output \\(\"--- Versuch \" + $_ + \" ---\"\\) ; try { \\(Invoke-WebRequest -Uri \"http://127.0.0.1:17321/health\" -UseBasicParsing -TimeoutSec 2\\).Content ; Write-Output \"OK\" } catch { Write-Output \\(\"FEHLER: \" + $_.Exception.Message\\) } ; Start-Sleep -Milliseconds 500 })",
+      "PowerShell(Write-Output \"=== /reload-config ===\" ; try { \\(Invoke-WebRequest -Method POST -Uri \"http://127.0.0.1:17321/reload-config\" -UseBasicParsing -TimeoutSec 3\\).Content } catch { Write-Output $_.Exception.Message })",
+      "PowerShell(Join-Path *)",
+      "Bash(mkdir -p \"C:/Users/df/.claude\")",
+      "Bash(mkdir -p \"I:/Computer und Netzwerk/Anwendungen & Scripte/KI BERATER/projekte/entwicklung/speech2text/.claude\")",
+      "PowerShell(Set-Location \"I:\\\\Computer und Netzwerk\\\\Anwendungen & Scripte\\\\KI BERATER\\\\projekte\\\\entwicklung\\\\speech2text\"; & powershell -ExecutionPolicy Bypass -File \".\\\\scripts\\\\build-daemon.ps1\" -Clean 2>&1 | Select-Object -Last 60)",
+      "PowerShell(Set-Location \"I:\\\\Computer und Netzwerk\\\\Anwendungen & Scripte\\\\KI BERATER\\\\projekte\\\\entwicklung\\\\speech2text\"; & powershell -ExecutionPolicy Bypass -File \".\\\\scripts\\\\build-daemon.ps1\" -Clean 2>&1 | Select-Object -Last 50)",
+      "PowerShell(Set-Location \"I:\\\\Computer und Netzwerk\\\\Anwendungen & Scripte\\\\KI BERATER\\\\projekte\\\\entwicklung\\\\speech2text\"; & powershell -ExecutionPolicy Bypass -File \".\\\\scripts\\\\build-daemon.ps1\" -Clean 2>&1 | Select-Object -Last 30)",
+      "PowerShell(try { $r = Invoke-WebRequest \"http://127.0.0.1:17321/health\" -TimeoutSec 2; Write-Host \"Port belegt - laeuft bereits ein Daemon:\"; Write-Host $r.Content } catch { Write-Host \"Port 17321 frei - kann Exe starten.\" })",
+      "PowerShell(Set-Location \"I:\\\\Computer und Netzwerk\\\\Anwendungen & Scripte\\\\KI BERATER\\\\projekte\\\\entwicklung\\\\speech2text\"; & powershell -ExecutionPolicy Bypass -File \".\\\\scripts\\\\build-daemon.ps1\" -Clean 2>&1 | Select-Object -Last 4)"
+    ]
+  }
+}

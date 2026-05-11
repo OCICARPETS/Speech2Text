@@ -1,0 +1,37 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(*)",
+      "Bash(ls:*)",
+      "Bash(dotnet build:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(sqlcmd:*)",
+      "Bash(dotnet publish:*)",
+      "Bash(powershell -Command \"Compress-Archive -Path './publish/*' -DestinationPath './deploy.zip' -Force\")",
+      "Bash(rm -f deploy.zip)",
+      "Bash(powershell -Command \"Remove-Item deploy.zip -ErrorAction SilentlyContinue; Compress-Archive -Path './publish/*' -DestinationPath './deploy.zip'\")",
+      "Bash(az webapp:*)",
+      "Bash(az version:*)",
+      "Bash(echo \"Exit: $?\")",
+      "Bash(az appservice plan show:*)",
+      "Bash(PYTHONIOENCODING=utf-8 \"C:/Users/df/AppData/Roaming/Python/Python314/Scripts/browser-use.exe\" close)",
+      "Bash(PYTHONIOENCODING=utf-8 \"C:/Users/df/AppData/Roaming/Python/Python314/Scripts/browser-use.exe\" --headed --profile \"Default\" open http://localhost:5265/)",
+      "Bash(PYTHONIOENCODING=utf-8 C:/Users/df/AppData/Roaming/Python/Python314/Scripts/browser-use.exe screenshot:*)",
+      "Bash(PYTHONIOENCODING=utf-8 C:/Users/df/AppData/Roaming/Python/Python314/Scripts/browser-use.exe:*)",
+      "Bash(mkdir -p \"I:\\\\Computer und Netzwerk\\\\Anwendungen & Scripte\\\\KI BERATER\\\\projekte\\\\bestandsuebersicht\\\\Projektplanung\\\\mockups\")",
+      "Bash(mkdir -p \"I:\\\\Computer und Netzwerk\\\\Anwendungen & Scripte\\\\KI BERATER\\\\projekte\\\\bestandsuebersicht\\\\docs\\\\specs\")",
+      "Bash(mkdir -p \"I:\\\\Computer und Netzwerk\\\\Anwendungen & Scripte\\\\KI BERATER\\\\projekte\\\\bestandsuebersicht\\\\docs\\\\plans\")",
+      "Bash(C:/Program Files/Google/Chrome/Application/chrome.exe:*)",
+      "Bash(bash:*)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:58920)",
+      "Bash(python create_presentation.py)",
+      "Bash(pip list:*)",
+      "Bash(tasklist *)"
+    ]
+  }
+}

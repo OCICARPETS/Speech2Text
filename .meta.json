@@ -1,0 +1,8 @@
+{
+  "name": "speech2text",
+  "kategorie": "Entwicklung",
+  "ziel": "Windows-Produktivitätstool: Caps Lock halten → Sprache aufnehmen → OpenAI transkribiert → gpt-4o-mini optimiert Text → automatisch in Zwischenablage + in aktives Fenster eingefügt.",
+  "erstellt": "2026-04-24",
+  "status": "Aktiv",
+  "logo": "bi-mic-fill"
+}
