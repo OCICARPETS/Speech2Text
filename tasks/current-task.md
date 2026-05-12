@@ -1,15 +1,69 @@
 # Current Task — Speech2Text
 
-*Letzte Aktualisierung: 2026-05-12 (Session 9 — ARM64-Windows-Support live-validiert, v1.2 commitet+gepusht+getagged, Release-Build offen)*
+*Letzte Aktualisierung: 2026-05-12 (Session 10 — v1.3 Publish-Readiness auf eigenem Branch, AHK abgelöst durch Python-Tray, Smoke-Tests grün, Push offen)*
 *Zu lesen am Anfang jeder Session — siehe `CLAUDE.md` Arbeitsregel 1.*
 
 ---
 
 ## Aktueller Stand
 
-**Phase:** ✅ **v1.2-Code live auf ARM64-PC validiert.** Settings-GUI + Caps-Lock-Push-to-Talk laufen sauber durch (User-Bestätigung 2026-05-12). Source-Fix (`_arch_fix.py`-Pre-Import-Shim) + Settings-GUI-Resize-Refactor sind gepusht (Commits `78835f4`, `54eace1`), Tag `v1.2` liegt auf Origin. **Noch offen:** Distribution-ZIP `Speech2Text-v1.2.zip` bauen + GitHub-Release `v1.2` mit Asset veröffentlichen.
+**Phase:** ✅ **v1.2 live + produktiv auf master.** ✅ **v1.3 Publish-Readiness fertig auf Branch `v1.3-publish-readiness`** — Pfad 1 vollständig umgesetzt: AHK-Ablösung (Win32 Low-Level-Hook + pystray-Tray), Settings-Teil-Refactor, Erst-Start-Wizard, Onboarding-Polish, SmartScreen-Doku, LIZENZEN.txt. Build der drei Bundles + Distribution-ZIP v1.3 erfolgreich (86.8 MB). E2E-Smoke-Tests gegen Mock-Daemon grün — Hotkeys gebunden, Re-Bind bei Revision-Diff, Pause/Resume funktioniert, kein Daemon-Auto-Start-Konflikt mit produktiver v1.2 (S2T_DAEMON_URL-Override). **Noch offen:** Branch nach origin pushen, User-Live-Test mit echtem Diktat in einer separaten Session.
 
 **Sessions bisher (2026-04-24):**
+
+*Session 10 (2026-05-12 spätabends, autonomer Run während User schläft) — v1.3 Publish-Readiness (Pfad 1):*
+
+**Auftrag:** „Tiefenanalyse über das beste Vorgehen, planen, programmieren, selbständig ausführlich testen, ggf. Fehler korrigieren — bis Ergebnis zufriedenstellend. Release 1.2 unbedingt erhalten."
+
+**Branch:** `v1.3-publish-readiness` (von master abgezweigt nach `54eace1`). `master` bleibt unverändert.
+
+**Plan-Datei:** `Projektplanung/07_Veroeffentlichungs-Readiness/PLAN.md` — Tiefenanalyse + 11 Phasen mit Datei-Pfaden und Code-Skizzen.
+
+**Was umgesetzt wurde:**
+
+1. **AHK-Ablösung** durch Python (kommerz-tauglich):
+   - `src/keyboard_hook.py` — Win32 `SetWindowsHookExW(WH_KEYBOARD_LL)` via ctypes, eigener Thread mit `GetMessageW`-Loop. RDP-fähig (gleicher Mechanismus den AHK intern nutzt). Modifier-State per `GetAsyncKeyState`, Auto-Repeat-Filter via `_down`-Set, Suppression gebundener Hotkeys via `Return 1` (CapsLock toggelt nicht mehr, F-Tasten triggern keine App-Aktionen).
+   - `src/tray_app.py` — pystray-Tray (Icon/Tooltip/Menü), Auto-Daemon-Start, Health-Polling 300ms, Re-Bind bei `hotkeys_revision`-Diff, Pause/Resume-Logik, Fehler-Toast via `icon.notify()`, Erst-Start-Wizard, First-Run-Hint.
+   - `src/daemon_client.py` — urllib-HTTP-Client für alle 8 Daemon-Endpoints. ENV-Var `S2T_DAEMON_URL` als Test-Override; `is_custom_url()` blockt Auto-Daemon-Start bei Custom-URL, um Konflikt mit produktivem v1.2 zu vermeiden.
+   - **shortcut.ahk gelöscht**, `scripts/build-hotkey.ps1` + `scripts/build-hotkey.py` raus, `tools/Ahk2Exe/` aus `.gitignore` raus.
+
+2. **Build-Pipeline:** `scripts/build-tray.ps1` (PyInstaller --onefile --noconsole, `--collect-all pystray PIL`, eigenes Icon eingebettet + via `--add-data` zur Laufzeit erreichbar). Output: `Speech2Text-Hotkey.exe` 27.35 MB (vorher AHK: 1.4 MB; Trade-off: lizenzfrei statt GPLv2-Last).
+
+3. **Recorder-Erweiterung:** `last_dictation_ts` in `/health` (minimal-invasiv) — Tray-App nutzt das fürs Onboarding-Tooltip. Sonst nichts an `recorder.py` geändert.
+
+4. **Settings-Refactor (Teil-Auslagerung):** `src/settings_helpers.py` (NEU) — HELP_*-Texte + `list_input_devices` + Layout-Limits. `settings.py` 934 → 845 Zeilen. Hotkey-Section bleibt verzahnt (Tech-Debt, dokumentiert).
+
+5. **Erst-Start-Wizard:** Bei leerem `api_key_encrypted` öffnet Tray automatisch Settings-GUI + setzt Tooltip „API-Key fehlt — Einstellungen öffnen". Sobald Key gespeichert: Daemon-Auto-Start. Bug entdeckt und gefixt (Wizard-Mode wurde nie verlassen, weil Restart-Block durch `_wizard_opened` blockiert war).
+
+6. **Onboarding-Polish:** First-Run-Hint im Tooltip („<Hauptkey> halten, um zu diktieren") solange `last_dictation_ts==0`. Nach erstem erfolgreichem Diktat: `first_run_completed=True` in config.json. Spec-Display-Helper (`+#F12` → `Shift + Win + F12`).
+
+7. **SmartScreen-Doku:** README.txt um Block „Beim ersten Start: ‚Weitere Informationen → Trotzdem ausführen'" erweitert, Begründung (kein EV-Cert für 200-400 €/Jahr). Wizard-Hinweis ergänzt.
+
+8. **LIZENZEN.txt (NEU):** Pflicht-Hinweis für pystray (LGPL-3.0) + Pillow + sounddevice/PortAudio + NumPy + pyperclip + pyautogui + OpenAI SDK + python-dotenv mit Source-Links. Plus Datenübertragung-Hinweis (OpenAI, kein Modelltraining laut DPA).
+
+9. **Distribution-ZIP v1.3** (`scripts/build-distribution.py` Version-Bump): 86.8 MB Total — Daemon 37.12 MB, Settings 23.03 MB, Hotkey 27.35 MB, plus Icon/install.bat/uninstall.bat/README.txt/LIZENZEN.txt.
+
+**Tests (43 Unit-Tests + 2 Mock-E2E-Tests):**
+- `tests/test_keyboard_hook.py` (25 Tests): Spec-Parser (modifier-Bitmask, vk-codes, edge cases), HotkeyManager-Bind/Unbind/Pause-Logik. Alle grün.
+- `tests/test_daemon_client.py` (10 Tests): HTTP-Layer gegen Mock-Server auf Port 17322, parse-key-value, JSON-Body bei `/start`. Alle grün.
+- `tests/test_tray_app.py` (8 Tests): Spec-Display + Pfad-Resolver. Alle grün.
+- `tests/mock_daemon.py` (NEU): Mock-HTTP-Server für E2E-Tests, mit Test-Hotkey `+#F23` (Shift+Win+F23 — unmöglich versehentlich gedrückt). Bietet `/control/health` + `/control/hotkeys` zum Live-Manipulieren des Antworten-Bodies.
+- **E2E-Smoke #1:** Tray-Exe gegen toten Port (S2T_DAEMON_URL=127.0.0.1:1) — 6s ohne Crash, Auto-Start unterdrückt (Custom-URL). ✓
+- **E2E-Smoke #2:** Tray-Exe gegen Mock-Daemon (S2T_DAEMON_URL=127.0.0.1:17322) — Hotkey gebunden („Hotkeys gebunden (revision=1, main='+#F23', ...)"). ✓
+- **E2E-Smoke #3:** Re-Bind bei Revision-Diff (mock_daemon /control/hotkeys + /control/health bumpen) — Tray bindet revision=2, main=+#F22, cycle=+#F24. ✓
+- **E2E-Smoke #4:** Pause/Resume — `HotkeyManager.pause()` + Resume triggert Re-Bind. ✓
+- **E2E-Smoke #5:** Test-Install entpackt aus Distribution-ZIP — Tray-Exe aus entpacktem Bundle läuft 5s ohne Crash, bindet Hotkey aus Mock. ✓
+
+**Was NICHT autonom getestet wurde (User-Manual-Validation nötig):**
+- Echtes Diktat End-to-End (Mikro → OpenAI → Paste)
+- pystray-Tray-Icon visuell (Headless nicht prüfbar)
+- Live-Hotkey-Drücken (würde produktiven v1.2-Hook + v1.3-Hook parallel laufen lassen — bewusst vermieden)
+- Settings-GUI visuelles Layout (nur Importierbarkeit getestet)
+
+**Tech-Debt / bekannte Limits:**
+- `src/settings.py` 845 Zeilen — Hard-Limit 600 weiter überschritten. Hotkey-Section-Auszug nach `settings_hotkey_section.py` ist Plan-Phase-6-Teil, aber wegen tiefer State-Verzahnung verschoben auf v1.4 (Risiko vs. Nutzen).
+- pystray-LGPL: konform via dynamic linking + LIZENZEN.txt, aber bei wirklicher Kommerzialisierung sollte ein eigener Win32-Tray (Shell_NotifyIconW) erwogen werden, damit auch die LGPL-Erwähnung in der App-Bundle-Beschreibung wegfällt.
+- Sicherer Auto-Start: bei wirklich offline Daemon retried Tray alle 6s — nicht aggressiv, aber sollte für Toast-Müll überwacht werden.
 
 *Session 9 (2026-05-12) — ARM64-Windows-Kompatibilität + Settings-GUI-Resize-Fix:*
 
