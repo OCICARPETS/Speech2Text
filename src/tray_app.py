@@ -340,14 +340,32 @@ class TrayApp:
             self._stop_event.wait(POLL_INTERVAL_S)
 
     def _poll_tick(self) -> None:
+        # Wizard-Modus: User hat noch keinen API-Key, Settings-GUI ist
+        # offen. Wir warten, bis der Key da ist — dann Daemon starten.
+        if self._wizard_opened:
+            self._set_tooltip(TIP_NEEDS_KEY)
+            try:
+                cfg_check = cfg_mod.load_config()
+                if cfg_mod.get_api_key(cfg_check):
+                    print("[Tray] API-Key gesetzt — Wizard verlässt + Daemon-Start",
+                          flush=True)
+                    self._wizard_opened = False
+                    # Daemon-Start zur Pflicht — sonst läuft Tray im Leerlauf
+                    if dc.health() is None and not dc.is_custom_url():
+                        self._start_daemon_blocking()
+                    self._rebind_hotkeys()
+            except Exception as e:  # noqa: BLE001
+                print(f"[Tray] Wizard-Check-Fehler: {type(e).__name__}: {e}",
+                      file=sys.stderr)
+            return
+
         h = dc.health()
         if h is None:
             self._set_tooltip(TIP_OFFLINE)
             # Daemon nicht erreichbar: alle DAEMON_RETRY_INTERVAL_S erneut
-            # starten — aber NUR bei Default-URL und nicht während Wizard.
+            # starten — aber NUR bei Default-URL.
             now = time.monotonic()
-            if (not self._wizard_opened
-                    and not dc.is_custom_url()
+            if (not dc.is_custom_url()
                     and now - self._daemon_last_retry > DAEMON_RETRY_INTERVAL_S):
                 self._daemon_last_retry = now
                 exe = _daemon_exe_path()
@@ -356,14 +374,6 @@ class TrayApp:
                     self._start_daemon_blocking()
                     self._rebind_hotkeys()
             return
-
-        # Wizard-Phase abschließen: API-Key wurde gerade gespeichert?
-        # → /health antwortet ja, also Settings hat ggf. Daemon noch nicht
-        # gestartet. Wir starten ihn hier garantiert nicht erneut, weil er
-        # bereits läuft (sonst hätte /health nicht geantwortet).
-        if self._wizard_opened:
-            self._wizard_opened = False
-            self._rebind_hotkeys()
 
         state = h.get("state", "idle")
         active_ui = h.get("active_mode_ui_name", "")
