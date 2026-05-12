@@ -1,13 +1,13 @@
 # Current Task — Speech2Text
 
-*Letzte Aktualisierung: 2026-05-12 (Session 9 — ARM64-Windows-Fix in Source eingebaut, Bundle-Rebuild offen)*
+*Letzte Aktualisierung: 2026-05-12 (Session 9 — ARM64-Windows-Support live-validiert, v1.2 commitet+gepusht+getagged, Release-Build offen)*
 *Zu lesen am Anfang jeder Session — siehe `CLAUDE.md` Arbeitsregel 1.*
 
 ---
 
 ## Aktueller Stand
 
-**Phase:** v1.1 stable + auf GitHub; **Session 9 in Arbeit**: ARM64-Windows-Support. Source-Fix (Pre-Import-Shim) + Settings-GUI-Resize-Fix umgesetzt, Python 3.12.10 x64 hier installiert, Bundles neu gebaut und ins installierte Layout kopiert. Daemon-Smoke-Test grün (kommt jetzt sauber an den API-Key-Check). Live-Test mit API-Key + Push-to-Talk steht aus; Commit/Push auf master ist noch offen (lokale Workings sind die einzige Quelle des Fixes).
+**Phase:** ✅ **v1.2-Code live auf ARM64-PC validiert.** Settings-GUI + Caps-Lock-Push-to-Talk laufen sauber durch (User-Bestätigung 2026-05-12). Source-Fix (`_arch_fix.py`-Pre-Import-Shim) + Settings-GUI-Resize-Refactor sind gepusht (Commits `78835f4`, `54eace1`), Tag `v1.2` liegt auf Origin. **Noch offen:** Distribution-ZIP `Speech2Text-v1.2.zip` bauen + GitHub-Release `v1.2` mit Asset veröffentlichen.
 
 **Sessions bisher (2026-04-24):**
 
@@ -35,8 +35,8 @@
 - **Toolchain hier eingerichtet:** Python 3.12.10 x64 ueber den python.org-Installer per User installiert (`%LocalAppData%\Programs\Python\Python312\`, PATH ergaenzt, ohne Admin / ohne py-Launcher). venv unter `.venv\`, `requirements.txt` + `pyinstaller` installiert. Bestaetigt: `platform.machine()=ARM64`, `PROCESSOR_ARCHITECTURE=AMD64` — das genau vom Shim erfasste Muster. Smoke-Test `import _arch_fix; import sounddevice` → 38 Audio-Devices erkannt, kein DLL-Fehler.
 - **Bundles neu gebaut:** `build-daemon.ps1 -Clean` (28.79 MB) + `build-settings.ps1 -Clean` (22.33 MB) — und ins installierte Bundle unter `%LocalAppData%\Programs\Speech2Text\` kopiert. Hotkey-Exe unveraendert (AHK, nicht betroffen).
 - **Daemon-Smoke-Test live:** Neuer Daemon startet ohne DLL-Crash, beendet sich nun mit der erwarteten Meldung `Kein OpenAI-API-Key gefunden` (Crash-Dialog ist weg). Damit ist die ARM64-Kompatibilitaet auf Source- + Bundle-Ebene validiert.
-- **Live-Test-Akzeptanzkriterien (noch offen):** Settings-GUI laeuft auf der lokalen Aufloesung, API-Key wird per DPAPI gespeichert, Daemon-Reload akzeptiert ihn, `/health` antwortet, Caps-Lock-Push-to-Talk + Transkription End-to-End grün.
-- **Commit/Push offen:** Source-Aenderungen (`_arch_fix.py`, recorder.py L16, settings.py L14 + GUI-Refactor) liegen lokal — noch kein commit. Dev-PC bekommt den Stand erst durch push.
+- ✅ **Live-Test (User-Bestätigung 2026-05-12):** Settings-GUI laeuft auf der ARM64-Aufloesung sauber, API-Key per DPAPI gespeichert, Daemon-Reload akzeptiert ihn, Caps-Lock-Push-to-Talk + Transkription End-to-End grün.
+- ✅ **Commit + Push erledigt:** `78835f4` (feat: ARM64-Windows-Support + Settings-GUI fuer kleine Aufloesungen), `54eace1` (chore: VERSION-Bump 1.2), Tag `v1.2` auf Origin. Dev-PC hat den Stand per `git pull` gezogen.
 
 *Session 8 (2026-05-11/12) — GitHub-Repo + Release-Workflow:*
 - **Repo angelegt:** `https://github.com/OCICARPETS/Speech2Text` (privat, Default-Branch `master` analog AussendienstAPP).
@@ -185,6 +185,7 @@
 - ✅ **Variante B (ZIP-Distribution)** (Session 5e Build, Session 7 Live-Test): `scripts/build-distribution.py` + Templates + ZIP. install.bat auf Zweit-PC am 2026-05-09 verifiziert.
 - ❌ **Schritt 4c (Inno Setup)** verworfen — Variante B reicht für Single-User + Rechner-Wechsel (Bundle-Exes sind self-contained, kein Python/AHK auf Zielrechner nötig).
 - ✅ **Schritt 6 — Hotkey-Layer-Ausbau** (Session 7, 2026-05-09): freie Hotkey-Belegung per Capture-Dialog, Modus-Hotkeys (Push-to-Talk in fixem Modus), Cycle-Hotkey mit Checkbox-Auswahl, Pause/Resume-Mechanismus für Capture, dynamische Hotkey-Bindung in AHK. Bundles + Distribution-ZIP auf v1.1.
+- ✅ **ARM64-Windows-Support + Settings-GUI-Resize** (Session 9, 2026-05-12): `_arch_fix.py`-Pre-Import-Shim für sounddevice-DLL-Auswahl auf ARM64-Host im x64-Prozess, Settings-GUI mit Footer-pack-bottom + Canvas-Scroll + Bildschirm-Capping. Live-validiert auf ARM64-PC (Settings-GUI + Push-to-Talk grün). Commits `78835f4` + `54eace1`, Tag `v1.2` gepusht.
 
 ---
 
