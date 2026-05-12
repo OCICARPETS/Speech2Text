@@ -11,6 +11,8 @@ Details: Projektplanung/05_Einstellungsmenue/SPEZIFIKATION.md §A1–A8.
 """
 from __future__ import annotations
 
+import _arch_fix  # noqa: F401  # ARM64-Windows: patcht platform.machine() vor (lazy) sounddevice-Import
+
 import sys
 import threading
 import tkinter as tk
@@ -135,8 +137,15 @@ class SettingsWindow:
         self.cfg = cfg_mod.load_config()
         self.root = tk.Tk()
         self.root.title("Speech2Text — Einstellungen")
-        self.root.geometry("680x900")
-        self.root.minsize(620, 820)
+        # Init-Groesse an den Bildschirm klemmen (kleine Aufloesungen / ARM-Tablets).
+        # Inhalt liegt in einem scrollbaren Canvas, Buttons in einem fixen Footer —
+        # selbst bei minsize-Hoehe sind die Aktions-Buttons immer sichtbar.
+        screen_w = self.root.winfo_screenwidth()
+        screen_h = self.root.winfo_screenheight()
+        init_w = min(680, max(560, screen_w - 40))
+        init_h = min(900, max(420, screen_h - 80))
+        self.root.geometry(f"{init_w}x{init_h}")
+        self.root.minsize(560, 420)
         # Pro Feldname: Liste von Widgets, die per Help-Toggle ein-/ausblenden.
         self._help_widgets: list[tk.Widget] = []
         # Working-Copy der Modus-Edits während der Session.
@@ -293,8 +302,53 @@ class SettingsWindow:
             ))
 
     def _build_ui(self) -> None:
-        outer = ttk.Frame(self.root, padding=14)
-        outer.pack(fill="both", expand=True)
+        # --- Footer (Buttons) zuerst, damit sie auf kleinen Screens
+        # garantiert sichtbar sind — pack(side="bottom") reserviert den
+        # Platz, der Scroll-Bereich darueber bekommt den Rest. ---
+        footer = ttk.Frame(self.root, padding=(14, 8, 14, 14))
+        footer.pack(side="bottom", fill="x")
+        footer.columnconfigure(0, weight=1)
+        ttk.Button(footer, text="Abbrechen", command=self.root.destroy).grid(
+            row=0, column=1, padx=(0, 6),
+        )
+        ttk.Button(footer, text="Anwenden", command=self._on_apply).grid(
+            row=0, column=2, padx=(0, 6),
+        )
+        ttk.Button(
+            footer, text="Speichern & Schließen", command=self._on_save_close,
+        ).grid(row=0, column=3)
+
+        # --- Scrollbarer Mittelbereich (alles ausser Footer) ---
+        canvas_holder = ttk.Frame(self.root)
+        canvas_holder.pack(side="top", fill="both", expand=True)
+        canvas = tk.Canvas(canvas_holder, highlightthickness=0)
+        vsb = ttk.Scrollbar(
+            canvas_holder, orient="vertical", command=canvas.yview,
+        )
+        canvas.configure(yscrollcommand=vsb.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        vsb.pack(side="right", fill="y")
+
+        outer = ttk.Frame(canvas, padding=14)
+        outer_window = canvas.create_window((0, 0), window=outer, anchor="nw")
+
+        def _on_canvas_configure(event: tk.Event) -> None:
+            # Inner-Frame-Breite an die Canvas-Breite koppeln, damit
+            # die Felder horizontal ueber die volle Breite layouten.
+            canvas.itemconfig(outer_window, width=event.width)
+        canvas.bind("<Configure>", _on_canvas_configure)
+
+        def _on_outer_configure(_event: tk.Event) -> None:
+            canvas.configure(scrollregion=canvas.bbox("all"))
+        outer.bind("<Configure>", _on_outer_configure)
+
+        def _on_mousewheel(event: tk.Event) -> None:
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        # Wheel nur binden, solange die Maus ueber dem Canvas ist —
+        # sonst kollidiert es mit Treeview/Text-Eigenscroll.
+        canvas.bind("<Enter>", lambda _e: canvas.bind_all("<MouseWheel>", _on_mousewheel))
+        canvas.bind("<Leave>", lambda _e: canvas.unbind_all("<MouseWheel>"))
+
         outer.columnconfigure(1, weight=1)
 
         row = 0
@@ -574,23 +628,8 @@ class SettingsWindow:
         )
         row += 1
 
-        # Spacer
-        outer.rowconfigure(row, weight=1)
-        row += 1
-
-        # Buttons unten — drei Aktionen
-        btn_frame = ttk.Frame(outer)
-        btn_frame.grid(row=row, column=0, columnspan=2, sticky="ew", pady=(8, 0))
-        btn_frame.columnconfigure(0, weight=1)
-        ttk.Button(btn_frame, text="Abbrechen", command=self.root.destroy).grid(
-            row=0, column=1, padx=(0, 6),
-        )
-        ttk.Button(btn_frame, text="Anwenden", command=self._on_apply).grid(
-            row=0, column=2, padx=(0, 6),
-        )
-        ttk.Button(btn_frame, text="Speichern & Schließen", command=self._on_save_close).grid(
-            row=0, column=3,
-        )
+        # Buttons liegen jetzt im fixen Footer (siehe Anfang von _build_ui) —
+        # kein Spacer + Button-Frame mehr im Scroll-Bereich.
 
     # --- Aktionen ---------------------------------------------------------
 
@@ -699,15 +738,21 @@ class SettingsWindow:
         """Wachsendes Resize: vergrößert das Fenster, falls der aktuelle
         Inhalt mehr Platz braucht. Schrumpft NICHT — manuelle User-Größe
         bleibt erhalten. Wird verzögert via after(0, …) aufgerufen, damit
-        tkinter zuvor die Layout-Änderung verarbeitet hat."""
+        tkinter zuvor die Layout-Änderung verarbeitet hat.
+
+        Wachstum wird auf den verfuegbaren Bildschirm geclippt — sonst
+        landet das Fenster auf kleinen Aufloesungen mit dem Footer
+        unsichtbar unter dem Taskbar."""
         def apply_resize() -> None:
             self.root.update_idletasks()
             needed_h = self.root.winfo_reqheight()
             needed_w = self.root.winfo_reqwidth()
             cur_h = self.root.winfo_height()
             cur_w = self.root.winfo_width()
-            new_h = max(cur_h, needed_h)
-            new_w = max(cur_w, needed_w)
+            max_h = self.root.winfo_screenheight() - 80
+            max_w = self.root.winfo_screenwidth() - 40
+            new_h = min(max_h, max(cur_h, needed_h))
+            new_w = min(max_w, max(cur_w, needed_w))
             if new_h != cur_h or new_w != cur_w:
                 self.root.geometry(f"{new_w}x{new_h}")
         self.root.after(0, apply_resize)

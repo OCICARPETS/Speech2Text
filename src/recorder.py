@@ -13,6 +13,8 @@ Start:
 """
 from __future__ import annotations
 
+import _arch_fix  # noqa: F401  # ARM64-Windows: patcht platform.machine() vor sounddevice-Import
+
 import ctypes
 import io
 import json

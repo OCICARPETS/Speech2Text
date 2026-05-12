@@ -1,15 +1,42 @@
 # Current Task — Speech2Text
 
-*Letzte Aktualisierung: 2026-05-12 (Session 8 — Repo OCICARPETS/Speech2Text + Release v1.1 live, gh CLI portable installiert)*
+*Letzte Aktualisierung: 2026-05-12 (Session 9 — ARM64-Windows-Fix in Source eingebaut, Bundle-Rebuild offen)*
 *Zu lesen am Anfang jeder Session — siehe `CLAUDE.md` Arbeitsregel 1.*
 
 ---
 
 ## Aktueller Stand
 
-**Phase:** ✅ **v1.1 stable + auf GitHub.** Hotkey-Layer-Ausbau (Schritt 6) live-validiert, Variante-B-Distribution-ZIP v1.1 erneuert. Quellcode liegt seit 2026-05-11 unter https://github.com/OCICARPETS/Speech2Text (privat). Distribution-ZIP wird über GitHub Releases verteilt (nicht mehr im Repo-Tracking).
+**Phase:** v1.1 stable + auf GitHub; **Session 9 in Arbeit**: ARM64-Windows-Support. Source-Fix (Pre-Import-Shim) + Settings-GUI-Resize-Fix umgesetzt, Python 3.12.10 x64 hier installiert, Bundles neu gebaut und ins installierte Layout kopiert. Daemon-Smoke-Test grün (kommt jetzt sauber an den API-Key-Check). Live-Test mit API-Key + Push-to-Talk steht aus; Commit/Push auf master ist noch offen (lokale Workings sind die einzige Quelle des Fixes).
 
 **Sessions bisher (2026-04-24):**
+
+*Session 9 (2026-05-12) — ARM64-Windows-Kompatibilität + Settings-GUI-Resize-Fix:*
+
+**Teil 2 — Settings-GUI fuer kleine Aufloesungen (live-Test auf diesem PC, ARM-Tablet):**
+- **Symptom:** Auf dem ARM64-PC waren die Aktions-Buttons (Abbrechen / Anwenden / Speichern & Schließen) unsichtbar, weil das Fenster mit `minsize(620, 820)` ueber den Bildschirmrand wuchs und die Buttons als unterste Grid-Zeile im Outer-Frame lagen.
+- **Fix in `src/settings.py`:**
+  - **Footer-Frame** mit den drei Buttons wird im `_build_ui` ZUERST per `pack(side="bottom", fill="x")` an `self.root` angeheftet — pack reserviert den Platz, damit der darueberliegende Bereich nie ueber den Footer hinauswaechst.
+  - **Scrollbarer Mittelteil:** `outer`-Frame liegt jetzt in einem `tk.Canvas` + `ttk.Scrollbar` (vertikal). Inner-Frame-Breite ist via `<Configure>`-Binding an die Canvas-Breite gekoppelt, Scrollregion wird beim Wachstum aktualisiert. Mausrad-Scroll nur aktiv, solange die Maus ueber dem Canvas ist (vermeidet Konflikt mit Treeview-/Text-Eigenscroll).
+  - **Init-Geometrie** wird an `winfo_screenwidth/height - 40/80` geklemmt. `minsize` reduziert auf `(560, 420)` — auch auf einem 1024×600-Tablet passt das Fenster jetzt komplett auf den Schirm.
+  - **`_resize_to_content`** zusaetzlich auf Bildschirmgroesse capped (vorher konnte wachsendes Resize nach Modus-/Help-Toggle off-screen laufen).
+  - Alter Spacer + Button-Grid am Ende des Outer-Frames entfernt.
+- **Build + Deploy:** `scripts/build-settings.ps1 -Clean` rerun, neue `Speech2Text-Settings.exe` (22.33 MB) ins installierte Bundle unter `%LocalAppData%\Programs\Speech2Text\` kopiert.
+
+**Teil 1 — ARM64-Sounddevice-DLL-Mismatch (Source-Fix + Rebuild + Live-Smoke):**
+- **Symptom:** v1.1-Bundle (installiert via install.bat unter `%LocalAppData%\Programs\Speech2Text\`) zeigt beim Start auf ARM64-PC `OSError: cannot load library '…\_sounddevice_data\portaudio-binaries\libportaudioarm64.dll': error 0x7e` (ERROR_MOD_NOT_FOUND). Traceback: `recorder.py` Zeile 32 `import sounddevice as sd`, `sounddevice.py` Zeile 91. Onefile-PyInstaller-Build → Extraktion in neues `%Temp%\_MEI…\` pro Start, manuelles DLL-Tauschen am Bundle nicht stabil.
+- **Ursache (analog spotify-downloader, siehe Memory `feedback_arm64_installer.md`):** sounddevice 0.5.x waehlt die DLL anhand von `platform.machine()`. Windows 11 ARM64 meldet ARM64 auch im x64-emulierten Prozess. Bundle wurde x64-only mit `--collect-all sounddevice` gebaut; entweder fehlt die ARM64-DLL im Wheel oder sie laesst sich im x64-Prozess nicht laden.
+- **Source-Fix umgesetzt:**
+  - **`src/_arch_fix.py`** (NEU, ~50 Zeilen) — Pre-Import-Shim. Erkennt x64-Prozess (`PROCESSOR_ARCHITECTURE=AMD64`) auf ARM64-OS (`platform.machine()=='ARM64'`) und patcht `platform.machine()` so, dass `sounddevice` die x64-DLL waehlt. Native ARM64-Python-Builds bleiben unberuehrt.
+  - **`src/recorder.py`** Zeile 16: `import _arch_fix  # noqa: F401` als allererster Import vor `sounddevice`.
+  - **`src/settings.py`** Zeile 14: dito (lazy-Import von sounddevice in den Audio-Device-Funktionen).
+- **PyInstaller-Auswirkung:** `_arch_fix.py` liegt in `src/`, wird durch normale Import-Analyse von `recorder.py`/`settings.py` automatisch eingesammelt — kein Spec-/Build-Skript-Update noetig.
+- **Repo geklont:** auf diesem ARM64-PC liegt das Repo unter `C:\Users\danie\Speech2Text` (Stand bei Session-Start: `d39cfa1`, working tree clean).
+- **Toolchain hier eingerichtet:** Python 3.12.10 x64 ueber den python.org-Installer per User installiert (`%LocalAppData%\Programs\Python\Python312\`, PATH ergaenzt, ohne Admin / ohne py-Launcher). venv unter `.venv\`, `requirements.txt` + `pyinstaller` installiert. Bestaetigt: `platform.machine()=ARM64`, `PROCESSOR_ARCHITECTURE=AMD64` — das genau vom Shim erfasste Muster. Smoke-Test `import _arch_fix; import sounddevice` → 38 Audio-Devices erkannt, kein DLL-Fehler.
+- **Bundles neu gebaut:** `build-daemon.ps1 -Clean` (28.79 MB) + `build-settings.ps1 -Clean` (22.33 MB) — und ins installierte Bundle unter `%LocalAppData%\Programs\Speech2Text\` kopiert. Hotkey-Exe unveraendert (AHK, nicht betroffen).
+- **Daemon-Smoke-Test live:** Neuer Daemon startet ohne DLL-Crash, beendet sich nun mit der erwarteten Meldung `Kein OpenAI-API-Key gefunden` (Crash-Dialog ist weg). Damit ist die ARM64-Kompatibilitaet auf Source- + Bundle-Ebene validiert.
+- **Live-Test-Akzeptanzkriterien (noch offen):** Settings-GUI laeuft auf der lokalen Aufloesung, API-Key wird per DPAPI gespeichert, Daemon-Reload akzeptiert ihn, `/health` antwortet, Caps-Lock-Push-to-Talk + Transkription End-to-End grün.
+- **Commit/Push offen:** Source-Aenderungen (`_arch_fix.py`, recorder.py L16, settings.py L14 + GUI-Refactor) liegen lokal — noch kein commit. Dev-PC bekommt den Stand erst durch push.
 
 *Session 8 (2026-05-11/12) — GitHub-Repo + Release-Workflow:*
 - **Repo angelegt:** `https://github.com/OCICARPETS/Speech2Text` (privat, Default-Branch `master` analog AussendienstAPP).
