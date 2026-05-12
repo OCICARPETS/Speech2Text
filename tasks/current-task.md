@@ -1,6 +1,6 @@
 # Current Task — Speech2Text
 
-*Letzte Aktualisierung: 2026-05-11 (Session 8 — GitHub-Repo OCICARPETS/Speech2Text angelegt, v1.1 als Release)*
+*Letzte Aktualisierung: 2026-05-12 (Session 8 — Repo OCICARPETS/Speech2Text + Release v1.1 live, gh CLI portable installiert)*
 *Zu lesen am Anfang jeder Session — siehe `CLAUDE.md` Arbeitsregel 1.*
 
 ---
@@ -11,12 +11,15 @@
 
 **Sessions bisher (2026-04-24):**
 
-*Session 8 (2026-05-11) — GitHub-Repo + Release-Workflow:*
+*Session 8 (2026-05-11/12) — GitHub-Repo + Release-Workflow:*
 - **Repo angelegt:** `https://github.com/OCICARPETS/Speech2Text` (privat, Default-Branch `master` analog AussendienstAPP).
 - **Initial Commit (4c2c32f):** 45 Dateien, 6122 Zeilen — alle Sources, Doku, Scripts, Projektplanung.
-- **`.gitignore` ergänzt:** `build/`, `tools/Ahk2Exe/`, `dist/` (alle Distribution-Outputs raus aus Tracking — ZIPs werden über Releases verteilt). Frühere Variante hatte die v1.1-ZIP mit-committet, wurde nach erstem Push wieder herausgenommen.
-- **Release-Workflow:** Pro Version Tag `vX.Y` setzen + Release über GitHub-Web-UI anlegen + `Speech2Text-vX.Y.zip` als Asset hochladen. Repo bleibt schlank, Binaries hängen am Release.
-- **Tag `v1.1`** auf Commit nach ZIP-Removal gesetzt + gepusht. Release-Anlage per Web-UI (kein `gh`-CLI auf Workstation installiert).
+- **ZIP-Removal-Commit (b3bf86c):** dist/ komplett in `.gitignore`. Frühere Variante hatte die v1.1-ZIP mit-committet (User-Wunsch), wurde nach erstem Push wieder herausgenommen. **Hinweis:** Die ZIP-Blob liegt physisch noch in der Git-History (Commit `4c2c32f`), `git clone` zieht also weiterhin ~60 MB. Bei Bedarf später per `git filter-repo` + force-push aus History entfernbar — bei Single-User-Repo nicht zwingend.
+- **`.gitignore`:** `build/`, `tools/Ahk2Exe/`, `dist/`, `config.local.json`, plus die bisherigen Python/IDE/OS-Einträge.
+- **`gh` CLI portable installiert (2026-05-12):** Chocolatey-Install scheiterte (kein Admin), Fallback per ZIP-Download nach `%LOCALAPPDATA%\Programs\gh\bin\gh.exe`. User-PATH wurde ergänzt — frische PowerShell-Sessions haben `gh` automatisch. Version 2.92.0, Auth läuft als `OCICARPETS` mit Scopes `gist, read:org, repo, workflow` (Browser-Login durch User).
+- **Tag `v1.1`** auf Commit `b3bf86c` (nach ZIP-Removal) gesetzt + gepusht.
+- **Release v1.1 angelegt** via `gh release create`: https://github.com/OCICARPETS/Speech2Text/releases/tag/v1.1 — published (kein Draft), `Speech2Text-v1.1.zip` (60,4 MB) als Asset hochgeladen. Direkt-Download: `https://github.com/OCICARPETS/Speech2Text/releases/download/v1.1/Speech2Text-v1.1.zip`. SHA-256: `a9d5bd6e8cc89d1e1d052453c2f1a5d087027f9a31c9d18b595acd05e02d1796`.
+- **Release-Workflow ab jetzt:** Pro Version Tag `vX.Y` setzen + ZIP bauen + `gh release create vX.Y dist/Speech2Text-vX.Y.zip --title "..." --notes "..."`. Repo bleibt schlank, Binaries hängen am Release.
 
 *Sessions bisher (2026-04-24):*
 
@@ -316,9 +319,9 @@ Falls MVP stabil läuft:
 
 ## Wiedereinstieg nächste Session
 
-**Stand:** v1.1 stable, alle bisherigen Features live-validiert. Distribution-ZIP `dist/Speech2Text-v1.1.zip` bereit zum Verteilen. Konkret offen:
+**Stand:** v1.1 stable, alle bisherigen Features live-validiert. Code liegt unter `OCICARPETS/Speech2Text` (privat). Distribution läuft über **GitHub Releases** — v1.1 ist online unter https://github.com/OCICARPETS/Speech2Text/releases/tag/v1.1. Konkret offen:
 
-1. **Optionale Verifikation:** v1.1-ZIP auf Zweit-PC installieren — bestätigt, dass die Hotkey-Features auch via install.bat funktionieren. Test wie in Session-7-Block (3 Bundles, Capture-Dialog, Cycle, Modus-Hotkey).
+1. **Optionale Verifikation:** v1.1-ZIP auf Zweit-PC installieren — bestätigt, dass die Hotkey-Features auch via install.bat funktionieren. Test wie in Session-7-Block (3 Bundles, Capture-Dialog, Cycle, Modus-Hotkey). Download direkt vom Release-Asset: `https://github.com/OCICARPETS/Speech2Text/releases/download/v1.1/Speech2Text-v1.1.zip`.
 2. **Veröffentlichung/Kommerz** (Brainstorming Session 7 vertagt): Architektur-Umbau (BYO-Key vs. eigenes Backend), Branding/Marke, Distribution (Code-Signing, Microsoft Store, Website), Recht (DSGVO, AGB, Auftragsverarbeitung mit OpenAI), Monetarisierung. Eigener Brainstorming-Block fällig — Block-Liste aus Session 7 als Startpunkt.
 3. **Kleinere Aufräum-Punkte** (Vorschläge, nicht zwingend):
    - Refactoring `src/settings.py` (~890 Zeilen → unter Hard-Limit), Hotkey-Slot-Widgets in eigenes Modul.
@@ -326,7 +329,7 @@ Falls MVP stabil läuft:
    - Drag&Drop-Sortierung Cycle-Loop, falls 5+ Modi mal im Loop.
    - API-Kosten-Zähler (Long-List in `Projektplanung/FEATURE_UEBERSICHT.md`).
 
-### Build-Workflow
+### Build- und Release-Workflow
 
 | Was | Befehl |
 |---|---|
@@ -334,8 +337,18 @@ Falls MVP stabil läuft:
 | Settings-Exe | `.\scripts\build-settings.ps1 -Clean` |
 | Hotkey-Exe | `python scripts\build-hotkey.py` (AV-resistente Variante; nicht die alte `build-hotkey.ps1`) |
 | Distribution-ZIP | `python scripts\build-distribution.py` |
+| Git: Tag + Push | `git tag -a vX.Y -m "Speech2Text vX.Y"; git push; git push --tags` |
+| Release anlegen | `gh release create vX.Y dist\Speech2Text-vX.Y.zip --title "vX.Y — ..." --notes "..."` |
+| Release-Stand prüfen | `gh release view vX.Y --repo OCICARPETS/Speech2Text` |
 
-Bei Updates: Code → relevante Bundles → distribution-Build → ZIP an Zielsystem.
+**Voller Release-Ablauf bei neuer Version:**
+1. Code-Änderung committen + pushen
+2. Relevante Bundles neu bauen (Daemon/Settings/Hotkey)
+3. `python scripts\build-distribution.py` → erzeugt `dist\Speech2Text-vX.Y.zip`
+4. Tag + Push (siehe Tabelle)
+5. `gh release create …` (siehe Tabelle)
+
+**`gh`-CLI Hinweis:** Liegt portable unter `%LOCALAPPDATA%\Programs\gh\bin\gh.exe`, User-PATH ist ergänzt. In frischen PowerShell-Sessions ist `gh` direkt aufrufbar. Falls in einer alten Session „command not found" kommt: `$env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')`. Auth-Status: `gh auth status` (sollte „Logged in to github.com account OCICARPETS" zeigen).
 
 ---
 
