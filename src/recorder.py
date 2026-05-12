@@ -174,6 +174,10 @@ class Recorder:
         self.state: State = State.IDLE
         self.last_error: str = ""
         self.last_error_ts: float = 0.0
+        # Onboarding-Hint (v1.3): wird auf time.time() gesetzt nach dem
+        # ersten erfolgreichen Diktat (Paste-Status erfolgreich). 0.0 = nie
+        # diktiert → Tray-App zeigt First-Run-Hint im Tooltip.
+        self.last_dictation_ts: float = 0.0
         self._lock = threading.Lock()
         self._stream: sd.InputStream | None = None
         self._chunks: list[np.ndarray] = []
@@ -583,6 +587,10 @@ class Recorder:
             pyperclip.copy(ausgabe)
             status = self._paste(ausgabe)
             print(f"✔  {status}\n")
+            # Onboarding-Marker für die Tray-App: ab jetzt hat der User
+            # mindestens einmal erfolgreich diktiert. Schreiben ohne Lock —
+            # einfacher float-Write, niemand liest darauf inkrementell.
+            self.last_dictation_ts = time.time()
         except Exception as e:  # noqa: BLE001
             # Defensive: nur Exception-Typ + Kurz-Message — vermeidet, dass
             # OpenAI in Error-Strings möglicherweise Transkripts-Fragmente
@@ -746,6 +754,7 @@ class Handler(BaseHTTPRequestHandler):
                 f"state={r.state.value}\n"
                 f"last_error={r.last_error}\n"
                 f"last_error_ts={r.last_error_ts:.3f}\n"
+                f"last_dictation_ts={r.last_dictation_ts:.3f}\n"
                 f"mode={r.config.get('mode', cfg_mod.DEFAULT_MODE)}\n"
                 f"active_mode={active}\n"
                 f"active_mode_ui_name={active_ui}\n"
