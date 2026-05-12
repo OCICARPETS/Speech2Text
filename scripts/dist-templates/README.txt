@@ -16,15 +16,43 @@ Installation:
 4. Nach Abschluss: Doppelklick auf "Speech2Text" auf dem Desktop
 
 
+Wichtig - SmartScreen-Hinweis beim ersten Start:
+------------------------------------------------
+Beim ersten Aufruf der Speech2Text-Exe meldet Windows ggf.:
+
+    "Ihr PC wurde durch Windows geschuetzt"
+    (SmartScreen-Warnung)
+
+Das ist normal - Speech2Text ist nicht code-signiert (ein
+EV-Zertifikat kostet 200-400 EUR pro Jahr, was fuer ein
+internes Tool unverhaeltnismaessig ist).
+
+So freigeben:
+1. Auf "Weitere Informationen" klicken
+2. Dann auf "Trotzdem ausfuehren"
+
+Windows merkt sich die Freigabe pro Datei. Wenn ein Update kommt
+und die Exe ersetzt wird, muss die Bestaetigung einmal erneut
+erfolgen.
+
+
 Erster Start - Konfiguration:
 ------------------------------
+Ab v1.3: Beim allerersten Start oeffnet sich das Einstellungs-
+Fenster AUTOMATISCH, damit der API-Key sofort eingerichtet wird.
+
 1. Mikrofon-Symbol erscheint rechts unten im Systemtray
-2. Rechtsklick aufs Tray-Icon - "Einstellungen..."
+   (Tooltip: "API-Key fehlt - Einstellungen oeffnen")
+2. Einstellungs-Fenster ist bereits offen
 3. OpenAI API-Key eintragen (sk-...) - wird mit Windows-DPAPI
    verschluesselt gespeichert (nur dieser Windows-Account kann ihn
    wieder entschluesseln)
 4. Optional: Optimierungs-Modus waehlen, Audio-Geraet, Pre-Roll usw.
 5. "Speichern und Schliessen"
+6. Der Daemon startet automatisch, der Tooltip wechselt zu "bereit"
+
+Falls das Settings-Fenster nicht von selbst aufgeht: Rechtsklick
+aufs Tray-Icon - "Einstellungen..."
 
 
 Bedienung:
@@ -84,11 +112,18 @@ Deinstallation:
 
 System-Voraussetzungen:
 -----------------------
-- Windows 10 oder 11 (64-bit)
+- Windows 10 oder 11 (64-bit, x64 oder ARM64 via x64-Emulation)
 - Mikrofon
 - OpenAI API-Key (https://platform.openai.com/api-keys)
 - Internetverbindung fuer OpenAI-API-Calls
 - KEIN Python, KEIN AutoHotkey separat noetig (alles im Bundle)
+
+
+Verwendete Open-Source-Komponenten:
+-----------------------------------
+Speech2Text-Hotkey.exe nutzt pystray (LGPL-3.0) fuer das Tray-Icon
+und Pillow (HPND/MIT-kompatibel) fuer die Icon-Verarbeitung. Details
+und vollstaendige Liste: siehe LIZENZEN.txt im Installations-Ordner.
 
 
 Fehlersuche:

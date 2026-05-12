@@ -36,6 +36,9 @@ copy /Y "%SCRIPT_DIR%Speech2Text-Settings.exe" "%INSTALL_DIR%\" >nul
 copy /Y "%SCRIPT_DIR%assets\speech2text.ico"   "%INSTALL_DIR%\assets\" >nul
 copy /Y "%SCRIPT_DIR%uninstall.bat"            "%INSTALL_DIR%\" >nul
 copy /Y "%SCRIPT_DIR%README.txt"               "%INSTALL_DIR%\" >nul
+if exist "%SCRIPT_DIR%LIZENZEN.txt" (
+  copy /Y "%SCRIPT_DIR%LIZENZEN.txt"           "%INSTALL_DIR%\" >nul
+)
 
 REM Desktop-Verknuepfung
 echo Lege Desktop-Verknuepfung an ...

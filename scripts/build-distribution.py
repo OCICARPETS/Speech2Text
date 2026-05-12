@@ -6,16 +6,17 @@ selbstextrahierendes ZIP-Paket fuer einfache Verteilung.
 Inhalt der ZIP:
   Speech2Text-v{VERSION}/
     Speech2Text-Daemon.exe
-    Speech2Text-Hotkey.exe
+    Speech2Text-Hotkey.exe   (ab v1.3: Python-Tray-App, kein AutoHotkey mehr)
     Speech2Text-Settings.exe
     assets/speech2text.ico
     install.bat       - kopiert nach %%LocalAppData%%\\Programs\\Speech2Text,
                         legt Desktop-Verknuepfung + optional Autostart an
     uninstall.bat     - sauberer Rueckbau
-    README.txt        - Kurzanleitung
+    README.txt        - Kurzanleitung (inkl. SmartScreen-Hinweis)
+    LIZENZEN.txt      - Open-Source-Komponenten + OpenAI-Datenpolitik
 
 Voraussetzung: Daemon-, Hotkey- und Settings-Exe muessen aktuell in
-build/dist/ liegen — vorher per build-daemon.ps1, build-hotkey.py und
+build/dist/ liegen — vorher per build-daemon.ps1, build-tray.ps1 und
 build-settings.ps1 bauen.
 
 Aufruf:
@@ -28,9 +29,10 @@ import sys
 import zipfile
 from pathlib import Path
 
-# Kein .resolve() — siehe Kommentar in build-hotkey.py (UNC-Path-Falle).
+# Kein .resolve() — siehe Memory feedback_path_resolve_unc_falle (I: ist
+# Substituted-Drive auf UNC; resolve() macht externe Tools unzugaenglich).
 PROJECT_ROOT = Path(__file__).parent.parent
-VERSION = "1.2"
+VERSION = "1.3"
 DIST_NAME = f"Speech2Text-v{VERSION}"
 
 SRC_DIST = PROJECT_ROOT / "build" / "dist"
@@ -48,6 +50,7 @@ def main() -> int:
         TEMPLATES / "install.bat",
         TEMPLATES / "uninstall.bat",
         TEMPLATES / "README.txt",
+        TEMPLATES / "LIZENZEN.txt",
     ]
     missing = [p for p in required if not p.exists()]
     if missing:
@@ -60,7 +63,7 @@ def main() -> int:
         )
         print("  scripts\\build-daemon.ps1", file=sys.stderr)
         print("  scripts\\build-settings.ps1", file=sys.stderr)
-        print("  scripts\\build-hotkey.py", file=sys.stderr)
+        print("  scripts\\build-tray.ps1", file=sys.stderr)
         return 1
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -81,6 +84,7 @@ def main() -> int:
     shutil.copy2(TEMPLATES / "install.bat", staging)
     shutil.copy2(TEMPLATES / "uninstall.bat", staging)
     shutil.copy2(TEMPLATES / "README.txt", staging)
+    shutil.copy2(TEMPLATES / "LIZENZEN.txt", staging)
 
     zip_path = OUT_DIR / f"{DIST_NAME}.zip"
     if zip_path.exists():

@@ -1,0 +1,76 @@
+Speech2Text - Lizenzhinweise Dritthersteller
+==============================================
+
+Speech2Text selbst ist proprietaer (Eigentum OCI Orient Carpet Import
+GmbH). Es nutzt folgende Open-Source-Komponenten:
+
+
+pystray (LGPL-3.0)
+------------------
+Tray-Icon und Menue. Wird dynamisch via Python-Import geladen.
+Source-Code: https://github.com/moses-palmer/pystray
+Lizenztext:  https://github.com/moses-palmer/pystray/blob/master/COPYING.LGPL3
+
+Gemaess LGPL-3.0 hast du das Recht, die in Speech2Text-Hotkey.exe
+gebuendelte pystray-Version durch eine eigene Version zu ersetzen.
+
+
+Pillow / PIL (HPND, MIT-kompatibel)
+-----------------------------------
+Bildverarbeitung fuer das Tray-Icon.
+Source-Code: https://github.com/python-pillow/Pillow
+Lizenztext:  https://github.com/python-pillow/Pillow/blob/main/LICENSE
+
+
+sounddevice (MIT)
+-----------------
+Mikrofon-Audio-Aufnahme.
+Source-Code: https://github.com/spatialaudio/python-sounddevice
+
+
+PortAudio (MIT-aehnlich)
+------------------------
+Native Audio-Library, mit sounddevice gebuendelt.
+Source-Code: https://github.com/PortAudio/portaudio
+
+
+NumPy (BSD-3-Clause)
+--------------------
+Audio-Datenverarbeitung.
+Source-Code: https://github.com/numpy/numpy
+
+
+pyperclip (BSD)
+---------------
+Zwischenablage-Zugriff.
+Source-Code: https://github.com/asweigart/pyperclip
+
+
+pyautogui (BSD)
+---------------
+Auto-Paste (Strg+V Simulation).
+Source-Code: https://github.com/asweigart/pyautogui
+
+
+OpenAI Python SDK (Apache-2.0)
+------------------------------
+REST-Client fuer die OpenAI-API.
+Source-Code: https://github.com/openai/openai-python
+
+
+python-dotenv (BSD-3-Clause)
+----------------------------
+.env-Datei-Parser (nur Entwicklungs-Setup).
+Source-Code: https://github.com/theskumar/python-dotenv
+
+
+Datenuebertragung an OpenAI
+============================
+Speech2Text sendet Audio-Aufnahmen an die OpenAI-Server zur Transkription
+(gpt-4o-transcribe) und optionalen Optimierung (gpt-4o-mini). Laut
+OpenAI-API-Nutzungsbedingungen werden API-Daten NICHT zum Modelltraining
+genutzt. Stand: 2026. Pruefe https://openai.com/policies/api-data-usage-policies
+fuer aktuelle Bedingungen.
+
+Keine Audio-Datei wird lokal auf Platte geschrieben - alles laeuft im
+RAM. Logfiles enthalten Status-Meldungen, aber KEINE Transkripte.
