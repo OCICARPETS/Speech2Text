@@ -232,9 +232,17 @@ class TrayApp:
             # Daemon weg ist). Im Poll-Loop merkt der Tray: Daemon off → starten.
             return
 
-        # 2) Daemon erreichbar? Wenn nein: Auto-Start.
+        # 2) Daemon erreichbar? Wenn nein: Auto-Start — aber NUR bei Default-URL.
+        # Custom URL (per S2T_DAEMON_URL) deutet auf Test-Setup hin; dort
+        # verwaltet der User den Daemon selbst, sonst würde der Auto-Start
+        # versuchen, den produktiven Daemon zu starten und auf den falschen
+        # Port zu kollidieren.
         if dc.health() is None:
-            self._start_daemon_blocking()
+            if dc.is_custom_url():
+                print(f"[Tray] Daemon offline ({dc.DAEMON_URL}) — "
+                      f"Auto-Start unterdrückt (Custom-URL)", flush=True)
+            else:
+                self._start_daemon_blocking()
 
         # 3) Hotkeys laden + binden
         self._rebind_hotkeys()
@@ -335,9 +343,11 @@ class TrayApp:
         h = dc.health()
         if h is None:
             self._set_tooltip(TIP_OFFLINE)
-            # Daemon nicht erreichbar: alle DAEMON_RETRY_INTERVAL_S erneut starten
+            # Daemon nicht erreichbar: alle DAEMON_RETRY_INTERVAL_S erneut
+            # starten — aber NUR bei Default-URL und nicht während Wizard.
             now = time.monotonic()
             if (not self._wizard_opened
+                    and not dc.is_custom_url()
                     and now - self._daemon_last_retry > DAEMON_RETRY_INTERVAL_S):
                 self._daemon_last_retry = now
                 exe = _daemon_exe_path()

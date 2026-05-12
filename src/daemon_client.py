@@ -11,13 +11,26 @@ Format aus Kompatibilität bestehen bleibt.
 from __future__ import annotations
 
 import json
+import os
 import time
-from typing import Iterable
 from urllib import error as urlerr
 from urllib import request as urlreq
 
-DAEMON_URL = "http://127.0.0.1:17321"
+# Default-URL — entspricht recorder.py PORT 17321 auf localhost.
+DEFAULT_DAEMON_URL = "http://127.0.0.1:17321"
+
+# Aktive URL — normalerweise = DEFAULT_DAEMON_URL. Override via ENV-Var
+# S2T_DAEMON_URL für Test-Setups, um neben einer laufenden Produktiv-Instanz
+# testen zu können. tray_app erkennt eine Custom-URL und unterdrückt den
+# Auto-Daemon-Start in dem Fall.
+DAEMON_URL = os.environ.get("S2T_DAEMON_URL", DEFAULT_DAEMON_URL)
 DEFAULT_TIMEOUT_S = 0.5  # Health-Polls sollen schnell scheitern, wenn Daemon weg ist
+
+
+def is_custom_url() -> bool:
+    """True, wenn die aktive Daemon-URL per ENV-Var von der Default-URL
+    abweicht. Verwendung: Auto-Daemon-Start nur bei Default-URL erlauben."""
+    return DAEMON_URL != DEFAULT_DAEMON_URL
 
 
 def _request(method: str, path: str,

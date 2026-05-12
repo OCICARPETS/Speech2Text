@@ -18,9 +18,8 @@ venv/
 Thumbs.db
 .DS_Store
 
-# Build-Output (PyInstaller, Ahk2Exe-Download)
+# Build-Output (PyInstaller)
 build/
-tools/Ahk2Exe/
 
 # Distribution: alle Build-Outputs raus. ZIPs werden über GitHub Releases verteilt,
 # nicht im Repo getrackt.
