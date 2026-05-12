@@ -30,7 +30,7 @@ from pathlib import Path
 
 # Kein .resolve() — siehe Kommentar in build-hotkey.py (UNC-Path-Falle).
 PROJECT_ROOT = Path(__file__).parent.parent
-VERSION = "1.1"
+VERSION = "1.2"
 DIST_NAME = f"Speech2Text-v{VERSION}"
 
 SRC_DIST = PROJECT_ROOT / "build" / "dist"
