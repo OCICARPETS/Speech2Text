@@ -17,119 +17,30 @@ import sys
 import threading
 import tkinter as tk
 from tkinter import messagebox, ttk
-from urllib import request as urlreq
-from urllib.error import URLError
 
 import config as cfg_mod
+import daemon_client as dc
 from hotkey_capture import HotkeyCaptureDialog, format_hotkey_for_display
-
-DAEMON_URL = "http://127.0.0.1:17321"
-
-PASTE_MODES = [
-    ("clipboard_ctrl_v", "Clipboard + Ctrl+V (Standard)"),
-    ("clipboard_only",   "Nur Clipboard (manuell Ctrl+V)"),
-    ("send_input",       "Nur SendInput (langsamer, robuster)"),
-]
-
-# Wenn audio_device == None → Windows-Default (folgt Headset-Wechsel).
-AUDIO_DEFAULT_LABEL = "Windows-Standardgerät (dynamisch)"
-
-MIC_TEST_DURATION_S = 3
-SAMPLE_RATE = 16000
-PREROLL_MS_MAX = 500  # Hard-Limit aus recorder.py (= Ringpuffer-Größe)
-POSTROLL_MS_MAX = 500  # Hard-Limit aus recorder.py
-MODE_PROMPT_SOFT_MAX = 4000  # Counter wird ab hier rot — kein hartes Limit
-
-HELP_API_KEY = (
-    "OpenAI-API-Key (sk-…). Wird mit Windows-DPAPI verschlüsselt — "
-    "nur dieser Windows-Account kann ihn entschlüsseln."
-)
-HELP_PASTE_MODE = (
-    "Wie der Text ins Zielfenster kommt: Clipboard+Strg+V (Standard, "
-    "schnell), nur Clipboard (manuell einfügen), SendInput (tippt "
-    "Zeichen für Zeichen — robuster in Terminals/CLI)."
-)
-HELP_AUDIO = (
-    "Mikrofon. Standard folgt dem Windows-Default und wechselt automatisch "
-    "beim Headset-An-/Abstecken."
-)
-HELP_HOTKEY = (
-    "Haupt-Push-to-Talk-Taste — halten zum Aufnehmen, loslassen zum "
-    "Beenden + Transkribieren. Klicke „🎯 Erfassen…“ und drücke die "
-    "gewünschte Taste oder Tasten-Kombination."
-)
-HELP_CYCLE_HOTKEY = (
-    "Optional. Tipp-Hotkey, der den aktiven Modus durch die unten "
-    "gewählten Cycle-Modi durchschaltet. Leer lassen, wenn nicht "
-    "benötigt — Modus-Wechsel geht dann nur über die Modus-Liste oder "
-    "Modus-Hotkeys."
-)
-HELP_MODE_HOTKEY = (
-    "Optional. Eigene Push-to-Talk-Taste für genau diesen Modus — "
-    "halten startet eine Aufnahme im fixierten Modus, ohne den aktiven "
-    "Modus zu ändern."
-)
-HELP_MODE_IN_CYCLE = (
-    "Wenn aktiv, ist dieser Modus Teil der Cycle-Reihe. Reihenfolge "
-    "entspricht der Modus-Liste oben."
-)
-HELP_PREBUFFER = (
-    "Mikro permanent offen, fängt das erste Wort vorab ab. Win11 zeigt "
-    "dann durchgehend einen Mikro-Indikator im Systemtray."
-)
-HELP_PREROLL = (
-    "Wieviel Audio vor dem Tastendruck angehängt wird (nur bei aktivem "
-    "Pre-Recording). 300 ms Default reicht meist; bis 500 ms bei wer "
-    "schon im Sprechen drückt."
-)
-HELP_POSTROLL = (
-    "Wieviel Audio nach dem Tasten-Loslassen weiter aufgezeichnet wird — "
-    "fängt nachschwingende Wörter ab. Erhöht die Wartezeit bis zum "
-    "fertigen Text um diesen Wert."
-)
-HELP_MODE_NAME = (
-    "Anzeigename des Modus — beliebig anpassbar. Leer/identisch mit "
-    "Standard → kein Override gespeichert."
-)
-HELP_MODE_PROMPT = (
-    "System-Prompt für den ausgewählten Modus. Editierbar — beim Speichern "
-    "wird der Wert gegen den Standard-Prompt verglichen, nur Abweichungen "
-    "werden als Override persistiert. Leer = kein Optimize-Call (wie Raw "
-    "Draft). Per ↺-Button stellst du den Standard wieder her."
+from settings_helpers import (
+    AUDIO_DEFAULT_LABEL, HELP_API_KEY, HELP_AUDIO, HELP_CYCLE_HOTKEY,
+    HELP_HOTKEY, HELP_MODE_HOTKEY, HELP_MODE_IN_CYCLE, HELP_MODE_NAME,
+    HELP_MODE_PROMPT, HELP_PASTE_MODE, HELP_POSTROLL, HELP_PREBUFFER,
+    HELP_PREROLL, MIC_TEST_DURATION_S, MODE_PROMPT_SOFT_MAX,
+    PASTE_MODES, POSTROLL_MS_MAX, PREROLL_MS_MAX, SAMPLE_RATE,
+    list_input_devices,
 )
 
 
 def trigger_reload() -> str:
     """POST /reload-config — Status-String zurück. Fehler nicht-fatal."""
-    try:
-        req = urlreq.Request(f"{DAEMON_URL}/reload-config", method="POST")
-        with urlreq.urlopen(req, timeout=3) as r:
-            return r.read().decode("utf-8", errors="replace")
-    except (URLError, OSError) as e:
-        return f"(Daemon nicht erreichbar: {e})"
+    ok = dc.reload_config()
+    return "reloaded" if ok else "(Daemon nicht erreichbar)"
 
 
 def _post(path: str) -> bool:
-    """POST ohne Body. True bei 2xx, False sonst (Fehler nicht-fatal)."""
-    try:
-        req = urlreq.Request(f"{DAEMON_URL}{path}", method="POST")
-        with urlreq.urlopen(req, timeout=2) as r:
-            return 200 <= r.status < 300
-    except (URLError, OSError):
-        return False
-
-
-def list_input_devices() -> list[tuple[int | None, str]]:
-    """Eingabe-Geräte aus sounddevice. Erstes Element: Default (None)."""
-    items: list[tuple[int | None, str]] = [(None, AUDIO_DEFAULT_LABEL)]
-    try:
-        import sounddevice as sd
-        for idx, dev in enumerate(sd.query_devices()):
-            if dev.get("max_input_channels", 0) > 0:
-                items.append((idx, f"[{idx}] {dev['name']}"))
-    except Exception:  # noqa: BLE001
-        pass  # Wenn sounddevice nicht da: nur Default-Eintrag bieten
-    return items
+    """POST ohne Body. Thin Wrapper auf daemon_client.post — wir behalten
+    den lokalen Namen, weil Bestandscode ihn auf vielen Stellen aufruft."""
+    return dc.post(path)
 
 
 class SettingsWindow:
