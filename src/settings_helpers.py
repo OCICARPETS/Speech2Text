@@ -16,6 +16,17 @@ PREROLL_MS_MAX = 500    # Hard-Limit aus recorder.py (= Ringpuffer-Größe)
 POSTROLL_MS_MAX = 500   # Hard-Limit aus recorder.py
 MODE_PROMPT_SOFT_MAX = 4000  # Counter wird ab hier rot — kein hartes Limit
 
+# --- UI-Theme (v1.3 GUI-Refresh) -------------------------------------------
+
+THEME_NAME = "clam"          # konsistent über Windows, weniger 90er-Look
+PAD_X = 12                   # horizontales Padding pro Sektion
+PAD_Y = 6                    # vertikales Padding pro Feld
+TAB_PADDING = (14, 12, 14, 8)  # left, top, right, bottom
+GROUP_FONT = ("Segoe UI", 9, "bold")
+HINT_FG = "#666"
+DIRTY_FG = "#B45309"         # Amber für „geändert, nicht gespeichert"
+ERROR_FG = "#c00"
+
 PASTE_MODES: list[tuple[str, str]] = [
     ("clipboard_ctrl_v", "Clipboard + Ctrl+V (Standard)"),
     ("clipboard_only",   "Nur Clipboard (manuell Ctrl+V)"),
