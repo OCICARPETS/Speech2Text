@@ -41,6 +41,7 @@ from keyboard_hook import HotkeyManager
 POLL_INTERVAL_S = 0.30        # AHK-Vorgänger: 300 ms — identisch übernommen
 DAEMON_BOOT_TIMEOUT_S = 8.0   # so lange warten wir auf /health beim Auto-Start
 DAEMON_RETRY_INTERVAL_S = 6.0 # Im Polling: alle 6 s neu versuchen, falls Daemon weg
+DAEMON_START_DEBOUNCE_S = 2.0 # Mindestabstand zwischen zwei Popen-Spawns
 
 TIP_OFFLINE    = "Speech2Text · Daemon offline"
 TIP_IDLE       = "Speech2Text · bereit"
@@ -251,6 +252,25 @@ class TrayApp:
         self._first_run_complete = bool(cfg.get("first_run_completed", False))
 
     def _start_daemon_blocking(self) -> None:
+        # Single-Instance-Schutz #1: Debounce — verhindert, dass mehrere
+        # Aufrufer (Bootstrap + Poll-Retry, oder mehrfache User-Doppelklicks)
+        # binnen 2 s mehrere Popen feuern. Session-11-Fund: 4 Daemons innerhalb
+        # 16 s parallel gestartet.
+        now = time.monotonic()
+        if now - self._daemon_last_retry < DAEMON_START_DEBOUNCE_S:
+            print(f"[Tray] Daemon-Start unterdrückt (Debounce, "
+                  f"{now - self._daemon_last_retry:.1f}s seit letztem Start)",
+                  flush=True)
+            return
+        # Single-Instance-Schutz #2: Health-Re-Check direkt vor Popen.
+        # Wenn ein anderer Prozess inzwischen den Daemon gestartet hat,
+        # kein weiterer Spawn.
+        if dc.health() is not None:
+            print("[Tray] Daemon ist inzwischen erreichbar — kein Spawn nötig",
+                  flush=True)
+            return
+        self._daemon_last_retry = now
+
         exe = _daemon_exe_path()
         if exe is None:
             print("[Tray] Daemon-Exe nicht gefunden — kann nicht starten",
@@ -363,11 +383,12 @@ class TrayApp:
         if h is None:
             self._set_tooltip(TIP_OFFLINE)
             # Daemon nicht erreichbar: alle DAEMON_RETRY_INTERVAL_S erneut
-            # starten — aber NUR bei Default-URL.
+            # starten — aber NUR bei Default-URL. Debounce + Health-Re-Check
+            # sitzen in _start_daemon_blocking, daher kein _daemon_last_retry-
+            # Vorsetzen hier (sonst doppelter Time-Buchhalt).
             now = time.monotonic()
             if (not dc.is_custom_url()
                     and now - self._daemon_last_retry > DAEMON_RETRY_INTERVAL_S):
-                self._daemon_last_retry = now
                 exe = _daemon_exe_path()
                 if exe is not None:
                     print("[Tray] Daemon weg — versuche Restart", flush=True)
