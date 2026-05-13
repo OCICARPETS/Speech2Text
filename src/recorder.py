@@ -885,7 +885,7 @@ def main() -> int:
     print(f"  Config:     {cfg_mod.config_path()}")
     print(f"  Modus:      {app_config.get('mode', cfg_mod.DEFAULT_MODE)}")
     print("  Endpoints:  POST /start · /stop · /cycle · /pause-hotkeys · /resume-hotkeys · /reload-config · /shutdown · GET /health · /hotkeys")
-    print("  Hotkey:     src/shortcut.ahk (Caps Lock Push-to-Talk)")
+    print("  Hotkey:     src/tray_app.py (Push-to-Talk via Win32 Low-Level-Hook)")
     if hidden:
         print("  Logging:    hidden (stdout/stderr → Log-Datei)")
     else:
