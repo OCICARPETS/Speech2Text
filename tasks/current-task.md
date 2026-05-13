@@ -1,15 +1,61 @@
 # Current Task — Speech2Text
 
-*Letzte Aktualisierung: 2026-05-12 (Session 10 — v1.3 Publish-Readiness auf eigenem Branch, AHK abgelöst durch Python-Tray, Smoke-Tests grün, Push offen)*
+*Letzte Aktualisierung: 2026-05-13 (Session 11 — v1.3 Hotfix: Hook-Crash, Single-Instance, GUI mit Tabs)*
 *Zu lesen am Anfang jeder Session — siehe `CLAUDE.md` Arbeitsregel 1.*
 
 ---
 
 ## Aktueller Stand
 
-**Phase:** ✅ **v1.2 live + produktiv auf master.** ✅ **v1.3 Publish-Readiness fertig auf Branch `v1.3-publish-readiness`** — Pfad 1 vollständig umgesetzt: AHK-Ablösung (Win32 Low-Level-Hook + pystray-Tray), Settings-Teil-Refactor, Erst-Start-Wizard, Onboarding-Polish, SmartScreen-Doku, LIZENZEN.txt. Build der drei Bundles + Distribution-ZIP v1.3 erfolgreich (86.8 MB). E2E-Smoke-Tests gegen Mock-Daemon grün — Hotkeys gebunden, Re-Bind bei Revision-Diff, Pause/Resume funktioniert, kein Daemon-Auto-Start-Konflikt mit produktiver v1.2 (S2T_DAEMON_URL-Override). **Noch offen:** Branch nach origin pushen, User-Live-Test mit echtem Diktat in einer separaten Session.
+**Phase:** ✅ **v1.2 live + produktiv auf master.** ✅ **v1.3 hotfix-fertig auf Branch `v1.3-publish-readiness`** — vier kritische Bugs aus dem ersten Live-Test gefixt: (1) keyboard_hook lParam-Signatur falsch → User konnte nichts tippen + Auto-Paste schlug fehl; (2) Daemon-Single-Instance verhindert 4-Daemon-Race; (3) recorder-Banner-Zeile sagte „src/shortcut.ahk" → AHK-Verwirrung beseitigt; (4) Settings-GUI komplett auf ttk.Notebook-Tabs umgebaut (Allgemein/Modi/Hotkeys/Audio) mit ttk-Theme „clam", Hotkey-Section als eigenes Modul `settings_hotkey_section.py`. Mock-Smoke-Test grün, keine `ctypes.ArgumentError` mehr. 4 hängende v1.3-Daemons gekillt, alte v1.0-Autostart-LNKs entfernt. Bundles + Distribution-ZIP v1.3 neu gebaut. **Noch offen:** Push auf origin + User-Live-Test mit installierter v1.3 via `dist\Speech2Text-v1.3\install.bat`.
 
 **Sessions bisher (2026-04-24):**
+
+*Session 11 (2026-05-13 morgens) — v1.3 Hotfix nach erstem Live-Test:*
+
+**User-Bericht:** „Aufnahme klappte, aber ich konnte gar nichts anderes mehr tippen. Auto-Paste per Clipboard ging nicht (nur Maus-Rechtsklick einfügen). Außerdem frage ich mich, ob AHK nicht doch noch verwendet wird. Die GUI des Einstellungs-Menü ist auch nicht verbessert."
+
+**Diagnose:**
+- `tray.log` voller `ctypes.ArgumentError: 'LP__KBDLLHOOKSTRUCT' object cannot be interpreted as an integer` (Zeile 384 in keyboard_hook.py). Ursache: `LowLevelKeyboardProc` deklarierte `lParam` als `POINTER(_KBDLLHOOKSTRUCT)` (bequem zum Dereferenzieren), aber `CallNextHookEx` erwartet LPARAM-Integer. Bei jedem Tastendruck Crash, ctypes ignorierte Exception und gab undefiniert zurück → Tasten verloren / suppressed. Auto-Paste (pyautogui Ctrl+V via SendInput) lief durch denselben Hook → kam nicht ans Zielfenster.
+- 4 v1.3-Daemons parallel auf 17321 (gestartet 06:15:23-06:15:39 aus `dist\Speech2Text-v1.3\`). Ursache: Bootstrap-Start + Poll-Loop-Retry ohne Cooldown → Race-Spawn.
+- recorder-Banner druckte noch `Hotkey: src/shortcut.ahk` — AHK ist gelöscht, aber Print-Zeile war alt. Verwirrend.
+- Settings-GUI war funktional unverändert seit v1.2 — User erwartete sichtbaren Polish.
+
+**Fixes (4 logische Commits auf Branch `v1.3-publish-readiness`):**
+
+1. **`fix(v1.3): keyboard_hook crash …` (commit ed005c0):**
+   - `LowLevelKeyboardProc`-Signatur: `lParam` als `wintypes.LPARAM` (integer), Cast intern via `ctypes.cast(lParam, POINTER(_KBDLLHOOKSTRUCT)).contents`.
+   - `LLKHF_INJECTED` (0x10) + `LLKHF_LOWER_IL_INJECTED` (0x02) — injected Events früh durchreichen, damit pyautogui-Ctrl+V nicht selbst gesuppressed wird.
+   - `_dispatch()` — Callbacks (`on_press`/`on_release`) in eigenem Worker-Thread, damit synchrone HTTP-Calls nicht den 300-ms-Hook-Timeout reißen.
+   - Regressionstests in `tests/test_keyboard_hook.py`: `argtypes[2]==LPARAM`, `LLKHF_INJECTED==0x10`.
+
+2. **`fix(v1.3): tray_app Daemon-Single-Instance …` (commit 6055022):**
+   - `DAEMON_START_DEBOUNCE_S=2.0` — Mindestabstand zwischen zwei Popen-Aufrufen.
+   - Health-Re-Check direkt vor `subprocess.Popen` — falls inzwischen ein anderer Prozess den Daemon gestartet hat, kein Spawn.
+   - `_daemon_last_retry` ist jetzt der einzige Cooldown-Anker (Bootstrap + Poll-Loop greifen denselben).
+
+3. **`docs(v1.3): recorder Banner-Zeile …` (commit d4c79b9):**
+   - `print("Hotkey: src/tray_app.py (Push-to-Talk via Win32 Low-Level-Hook)")`.
+
+4. **`feat(v1.3): Settings-GUI mit Tabs …` (commit da99093):**
+   - `src/settings_hotkey_section.py` (NEU, 342 Zeilen) — `HotkeySection`-Klasse: Capture-Slots, Treeview-Übersicht, Working-Sets, `apply_to_config()`, `update_for_mode()`. Eingebunden in `settings.py` über zwei Build-Methoden (`build_hotkeys_tab` + `build_mode_widgets`).
+   - `src/settings.py`: komplett neu — 4 Tabs via `ttk.Notebook` (Allgemein / Modi / Hotkeys / Audio), ttk-Theme „clam", `ttk.LabelFrame`-Gruppen, einheitliches Padding, Dirty-Indikator in Statusleiste (Amber „● ungespeicherte Änderungen"), Cancel-Confirmation bei dirty, Prompt-Textbox 8 statt 6 Zeilen. Auto-Resize-Logik durch saubere Tab-Architektur ersetzt. Help-Toggle weg (Hilfetexte permanent unter jedem Feld).
+   - Zeilenzahlen: settings.py 845 → 585 (unter 600-Hard-Limit), settings_helpers.py +Theme-Konstanten (107 → 118).
+
+**Cleanup auf User-PC:**
+- 4 hängende v1.3-Daemons aus `dist\Speech2Text-v1.3\` gestoppt.
+- Alte Autostart-LNKs entfernt: `Speech2Text-Daemon.lnk` (zeigte auf `scripts\start-daemon-hidden.bat` aus Dev-Setup) + `Speech2Text-Hotkey.lnk` (zeigte auf gelöschtes `src/shortcut.ahk`). Sauberer Autostart-Ordner.
+
+**Build + Tests:**
+- Bundle-Sizes: Daemon 37.12 MB, Settings 23.04 MB, Hotkey 27.35 MB.
+- `tests/`: 45 Unit-Tests grün (43 vorher + 2 neue Hook-Regression).
+- Mock-Smoke-Test mit gefixtem Bundle: Tray bindet Hotkeys, KEINE ctypes.ArgumentError mehr im tray.log.
+- Distribution-ZIP `dist\Speech2Text-v1.3.zip` neu erzeugt.
+
+**Bekannte Begleit-Punkte:**
+- Echter Live-Test mit Diktat + Auto-Paste hat der User noch vor sich (autonom nicht durchführbar — würde mit produktivem v1.2-Hook kollidieren).
+- pystray-Tray-Icon visuell + Settings-GUI-Tabs sind nur headless-importgetestet, nicht visuell.
+- Installierte v1.x in `%LocalAppData%\Programs\Speech2Text\` weiterhin LEER — User soll `dist\Speech2Text-v1.3\install.bat` doppelklicken, wenn er v1.3 dauerhaft will.
 
 *Session 10 (2026-05-12 spätabends, autonomer Run während User schläft) — v1.3 Publish-Readiness (Pfad 1):*
 
