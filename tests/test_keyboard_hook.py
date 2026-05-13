@@ -86,6 +86,33 @@ class TestParseSpec(unittest.TestCase):
         self.assertIsNone(kh.parse_spec("F25"))
 
 
+class TestWin32Signatures(unittest.TestCase):
+    """Regressionstests für den Hook-Crash aus Session 11.
+    LowLevelKeyboardProc-lParam MUSS LPARAM (int) sein, nicht POINTER,
+    sonst wirft CallNextHookEx in jedem Tastendruck ArgumentError."""
+
+    def test_llkhf_injected_constants(self):
+        # Win32-Bit-Werte stehen seit Win2k fest — wenn die sich ändern,
+        # bricht wesentlich mehr als nur dieser Test.
+        if not kh._IS_WINDOWS:
+            self.skipTest("Win32-Konstanten nur unter Windows verfügbar")
+        self.assertEqual(kh.LLKHF_INJECTED, 0x10)
+        self.assertEqual(kh.LLKHF_LOWER_IL_INJECTED, 0x02)
+
+    def test_lowlevel_proc_lparam_is_integer_type(self):
+        # Die Proc-Signatur MUSS LPARAM (=int) als lParam haben. Sonst
+        # crasht CallNextHookEx(lParam) mit ArgumentError 'LP_struct
+        # cannot be interpreted as an integer'.
+        if not kh._IS_WINDOWS:
+            self.skipTest("ctypes-WINFUNCTYPE nur unter Windows verfügbar")
+        from ctypes import wintypes
+        argtypes = kh.LowLevelKeyboardProc._argtypes_
+        # Position 3 = lParam (nach nCode, wParam)
+        self.assertEqual(argtypes[2], wintypes.LPARAM,
+                         msg="lParam muss LPARAM (integer) sein, "
+                             "sonst crasht CallNextHookEx")
+
+
 class TestHotkeyManagerBind(unittest.TestCase):
     """HotkeyManager-Logik ohne Hook-Thread (start() nicht aufrufen).
     Wir testen nur Bind/Unbind/Pause-State, weil die echte Hook-Schicht

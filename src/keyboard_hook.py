@@ -118,6 +118,13 @@ if _IS_WINDOWS:
 
     HC_ACTION = 0
 
+    # KBDLLHOOKSTRUCT.flags-Bits (winuser.h)
+    LLKHF_EXTENDED           = 0x01
+    LLKHF_LOWER_IL_INJECTED  = 0x02
+    LLKHF_INJECTED           = 0x10
+    LLKHF_ALTDOWN            = 0x20
+    LLKHF_UP                 = 0x80
+
     class _KBDLLHOOKSTRUCT(ctypes.Structure):
         _fields_ = [
             ("vkCode",      wintypes.DWORD),
@@ -127,11 +134,16 @@ if _IS_WINDOWS:
             ("dwExtraInfo", ctypes.c_void_p),
         ]
 
+    # WICHTIG: lParam ist LPARAM (integer), NICHT POINTER(struct). Wenn man
+    # POINTER deklariert, kommt zwar ein Python-Pointer-Objekt rein, das
+    # man bequem dereferenzieren kann — aber beim Weiterreichen an
+    # CallNextHookEx wirft ctypes ArgumentError, weil LPARAM eine Zahl
+    # erwartet. Wir nehmen also LPARAM und casten intern via ctypes.cast.
     LowLevelKeyboardProc = ctypes.WINFUNCTYPE(
         ctypes.c_long,
         ctypes.c_int,
         wintypes.WPARAM,
-        ctypes.POINTER(_KBDLLHOOKSTRUCT),
+        wintypes.LPARAM,
     )
 
     _user32.SetWindowsHookExW.argtypes = (
@@ -318,15 +330,33 @@ class HotkeyManager:
         finally:
             self._hook = None
 
-    def _low_level_proc(self, nCode: int, wParam: int, lParam):
+    def _dispatch(self, cb: Callable[[], None]) -> None:
+        """Feuert Callback in eigenem Thread. Wichtig: Win32-LL-Hook hat
+        ein 300-ms-Default-Timeout (Registry-Key `LowLevelHooksTimeout`).
+        Wenn der Hook-Callback länger blockt, entfernt Windows den Hook
+        ohne Vorwarnung. Daher dürfen wir hier KEINE HTTP-Calls oder UI-
+        Arbeit synchron machen — alles ins Worker-Thread auslagern."""
+        threading.Thread(target=cb, daemon=True, name="HkDispatch").start()
+
+    def _low_level_proc(self, nCode: int, wParam: int, lParam: int):
         # nCode < 0 → laut Doku einfach durchreichen, nicht inspizieren
         if nCode != HC_ACTION:
             return _user32.CallNextHookEx(self._hook, nCode, wParam, lParam)
         try:
-            ks = lParam.contents
+            # lParam ist als LPARAM (integer) deklariert — wir casten zum
+            # Struct-Pointer und dereferenzieren. Cast statt POINTER in der
+            # Proc-Signatur, weil CallNextHookEx LPARAM-int erwartet.
+            ks = ctypes.cast(lParam, ctypes.POINTER(_KBDLLHOOKSTRUCT)).contents
             vk = ks.vkCode
+            flags = ks.flags
             is_down = wParam in (WM_KEYDOWN, WM_SYSKEYDOWN)
             is_up   = wParam in (WM_KEYUP,   WM_SYSKEYUP)
+
+            # Injected Events (z.B. pyautogui Ctrl+V vom Daemon nach Diktat)
+            # NIE als Hotkey behandeln — sonst können wir uns selbst ins
+            # Knie schießen, indem wir den eigenen Auto-Paste suppressen.
+            if flags & (LLKHF_INJECTED | LLKHF_LOWER_IL_INJECTED):
+                return _user32.CallNextHookEx(self._hook, nCode, wParam, lParam)
 
             if vk in _MODIFIER_VKS:
                 # Modifier selbst nie als Haupttaste — durchreichen.
@@ -359,11 +389,9 @@ class HotkeyManager:
                     # Auto-Repeat: kein erneuter Trigger, aber Event suppressen
                     return 1
                 self._down.add(vk)
-                try:
-                    on_press()
-                except Exception as e:  # noqa: BLE001
-                    print(f"[HotkeyHook] on_press error: "
-                          f"{type(e).__name__}: {e}", file=sys.stderr)
+                # Worker-Thread, damit HTTP-Latenz den 300-ms-Hook-Timeout
+                # nicht reißt.
+                self._dispatch(on_press)
                 return 1  # suppress
             elif is_up:
                 if vk not in self._down:
@@ -371,11 +399,7 @@ class HotkeyManager:
                     return 1
                 self._down.discard(vk)
                 if on_release is not None:
-                    try:
-                        on_release()
-                    except Exception as e:  # noqa: BLE001
-                        print(f"[HotkeyHook] on_release error: "
-                              f"{type(e).__name__}: {e}", file=sys.stderr)
+                    self._dispatch(on_release)
                 return 1  # suppress
         except Exception as e:  # noqa: BLE001
             # Defensiv: ein Crash im Hook-Callback würde den Hook abreißen.
