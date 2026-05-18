@@ -1,15 +1,63 @@
 # Current Task — Speech2Text
 
-*Letzte Aktualisierung: 2026-05-18 (Session 12 — v1.3 Live-Test grün + Release v1.3 auf GitHub)*
+*Letzte Aktualisierung: 2026-05-18 (Session 13 — Makro-Tastatur-Hotkey-Bug analysiert + gefixt)*
 *Zu lesen am Anfang jeder Session — siehe `CLAUDE.md` Arbeitsregel 1.*
 
 ---
 
 ## Aktueller Stand
 
-**Phase:** ✅ **v1.3 live auf master + Release v1.3 auf GitHub.** User hat installierte v1.3 live getestet — Push-to-Talk + Auto-Paste funktionieren, API-Key wurde aus vorheriger Installation übernommen (DPAPI-verschlüsselt in `%APPDATA%\Speech2Text\config.json`, Update-fest weil Bundle in `%LocalAppData%\Programs\Speech2Text\` separat liegt). master per Fast-Forward auf den 13-Commits-v1.3-Branch gezogen (`54eace1` → `da9717f`), Tag `v1.3` gesetzt und gepusht, GitHub-Release v1.3 mit `Speech2Text-v1.3.zip` (86,8 MB) als Asset angelegt. Release-URL: https://github.com/OCICARPETS/Speech2Text/releases/tag/v1.3
+**Phase:** Hotfix-Branch auf master gepusht (Commit folgt unten). Bugfix für Hotkey-Hook bei Makro-Tastaturen, die Modifier vor der Haupttaste loslassen — Diagnose durch tray.log eindeutig, Fix umgesetzt, 7 neue Regressionstests grün. **Live-Validierung mit Makrotastatur durch User steht aus** — User hat session-ende gerufen, bevor er den finalen Test durchführen konnte. Tray-Exe ist neu gebaut (`build/dist/Speech2Text-Hotkey.exe`, 27,35 MB) und muss bei der nächsten Session ins installierte Bundle kopiert + live getestet werden. Wenn Live-Test grün → v1.3.1-Tag + GitHub-Release-Update.
 
 **Sessions bisher (2026-04-24):**
+
+*Session 13 (2026-05-18) — Hotkey-Hook-Fix für Makro-Tastaturen:*
+
+**User-Bericht:** „Bei Makrotastatur-Hotkeys (Ctrl+Win+F1 / Ctrl+Shift+F1) erkennt Settings sie zwar beim Capture, aber dann hängt ‚Aufnahme läuft' fest und Mode-Switch klappt nicht. Single-Key Q geht ohne Probleme."
+
+**Diagnose-Logging eingebaut** (`S2T_HOTKEY_DEBUG=1` als Env-Var):
+- `keyboard_hook._low_level_proc` schreibt jedes Event nach stderr → `tray.log`: `vk`, KEYDOWN/UP, aktuelle mods, flags, `_down`-State, plus Decision-Zeile (injected/modifier/no-match/press matched/release/auto-repeat).
+- Bleibt dauerhaft drin als Debug-Schalter (default off).
+
+**Root-Cause aus dem Log (2 zusammenhängende Bugs):**
+1. **Modifier-Reihenfolge**: Makro-Tastatur sendet beim Loslassen Modifier ZUERST, Haupttaste DANACH. KeyUp kam mit `mods=—` (alle Modifier weg) und `vk=0x70` (F1). Lookup `(0, F1)` fand die Bindung `(CW, 0x70)` nicht → pass-through → `_down` wurde nicht aufgeräumt → `on_release` feuerte NIE → Daemon blieb in Aufnahme.
+2. **Cross-Talk gleicher vk**: `_down` war als `set[int]` per-vk getrackt. Sobald F1 stuck war, blockte der Auto-Repeat-Filter alle weiteren F1-Presses — auch von der Cycle-Bindung `(CS, 0x70)` → Mode-Switch ohne Trigger.
+
+**Fix** (`src/keyboard_hook.py`, 1 Datei):
+- `_down: set[int]` → `_down: dict[int, tuple[int, int]]` (vk → originale (mods, vk)-Bindung).
+- KeyUp matched über die beim KeyDown gemerkte Bindung, **unabhängig** von der aktuellen Modifier-Maske.
+- Press/Release-Kernlogik extrahiert in `_handle_event(vk, is_down, is_up, mods, snap) -> _PASS/_SUPPRESS` (pure Python, ohne Win32 testbar). `_low_level_proc` ist jetzt dünner ctypes-Wrapper.
+- `resume()` cleart `_down` zusätzlich — kein stuck-key durch Pause-während-Press mehr.
+
+**Tests** (`tests/test_keyboard_hook.py`, +7 Regressionstests in neuer Klasse `TestHandleEventMacroKeyboard`):
+- `test_macro_release_first_modifier_triggers_on_release` — Up mit mods=0 ruft trotzdem `on_release`.
+- `test_cross_talk_main_and_cycle_same_vk` — Cycle (^+F1) triggert nach Main (^#F1)-Release wieder.
+- `test_auto_repeat_blocks_second_press_until_release` — Auto-Repeat-Verhalten bleibt korrekt.
+- `test_release_without_prior_press_passes_through` — KeyUp ohne tracked Press: pass-through, kein false on_release.
+- `test_resume_clears_down_state` — pause/resume räumt _down.
+- `test_unmatched_press_with_modifiers_passes_through` — fremde Modifier-Kombi wird nicht abgefangen.
+- `test_no_release_callback_still_clears_down` — Tap-only-Hotkey (Cycle) räumt _down trotz fehlendem on_release.
+- Gesamt: 34 grüne Tests (27 vorher + 7 neu).
+
+**Build:** `Speech2Text-Hotkey.exe` neu kompiliert (PyInstaller --onefile --noconsole, 27,35 MB). Liegt unter `build/dist/`. **Noch nicht** ins installierte Bundle in `%LocalAppData%\Programs\Speech2Text\` kopiert.
+
+**Offen / nächste Session:**
+1. Neue Exe ins Bundle kopieren (`Copy-Item build\dist\Speech2Text-Hotkey.exe → %LocalAppData%\Programs\Speech2Text\Speech2Text-Hotkey.exe`).
+2. Tray killen + neu starten (siehe Notiz unten).
+3. Live-Test mit Makrotastatur:
+   - Ctrl+Win+F1 halten + loslassen → Aufnahme an + Auto-Paste klappt?
+   - Ctrl+Shift+F1 mehrfach tappen → Mode-Switch jeweils mit Toast?
+   - Mischung beider + Single-Key Q → keine Hänger?
+4. Bei grünem Live-Test: Distribution-ZIP v1.3.1 bauen, Tag `v1.3.1` setzen, GitHub-Release anlegen (oder v1.3-Release-Asset ersetzen — Entscheidung beim User).
+
+**Befehle für den Live-Test** (PowerShell):
+```powershell
+Get-Process Speech2Text-Hotkey -ErrorAction SilentlyContinue | Stop-Process -Force
+Copy-Item "I:\Computer und Netzwerk\Anwendungen & Scripte\KI BERATER\projekte\entwicklung\speech2text\build\dist\Speech2Text-Hotkey.exe" "$env:LocalAppData\Programs\Speech2Text\Speech2Text-Hotkey.exe" -Force
+Start-Process "$env:LocalAppData\Programs\Speech2Text\Speech2Text-Hotkey.exe"
+# Bei Bedarf mit Debug-Logging:
+# $env:S2T_HOTKEY_DEBUG = "1"; Start-Process "$env:LocalAppData\Programs\Speech2Text\Speech2Text-Hotkey.exe"
+```
 
 *Session 12 (2026-05-18) — v1.3 Live-Test + Release:*
 

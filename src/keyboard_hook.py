@@ -17,9 +17,15 @@ Lizenz: eigener Code. Keine LGPL/GPL-Last.
 """
 from __future__ import annotations
 
+import os
 import sys
 import threading
 from typing import Callable
+
+# Diagnose-Schalter: wenn S2T_HOTKEY_DEBUG gesetzt (≠ "", "0", "false"), schreibt
+# der Hook jedes erfasste Event nach stderr (= tray.log im Bundle). Nur für
+# Fehlersuche aktivieren — die Ausgabe ist sehr gespraechig.
+_HK_DEBUG = os.environ.get("S2T_HOTKEY_DEBUG", "").strip().lower() not in ("", "0", "false", "no")
 
 # --- Modifier-Bitmaske + Virtual-Key-Mapping --------------------------------
 
@@ -170,6 +176,23 @@ if _IS_WINDOWS:
 
     WM_QUIT = 0x0012
 
+    _WPARAM_NAMES = {
+        WM_KEYDOWN: "KEYDOWN", WM_KEYUP: "KEYUP",
+        WM_SYSKEYDOWN: "SYSKEYDOWN", WM_SYSKEYUP: "SYSKEYUP",
+    }
+
+
+def _mods_to_str(mods: int) -> str:
+    """Kompakte Modifier-Anzeige fuers Debug-Log. C=Ctrl A=Alt S=Shift W=Win."""
+    if not mods:
+        return "—"
+    parts = []
+    if mods & MOD_CTRL:  parts.append("C")
+    if mods & MOD_ALT:   parts.append("A")
+    if mods & MOD_SHIFT: parts.append("S")
+    if mods & MOD_WIN:   parts.append("W")
+    return "".join(parts)
+
 
 def _modifier_state() -> int:
     """Bitmaske der aktuell gedrückten Modifier (Ctrl/Alt/Shift/Win),
@@ -231,9 +254,11 @@ class HotkeyManager:
         # None sein (für reine Tap-Hotkeys wie Cycle).
         self._bindings: dict[tuple[int, int], tuple[Callable[[], None],
                                                     Callable[[], None] | None]] = {}
-        # Set der vk-Codes, die aktuell als "down" verfolgt werden (Auto-
-        # Repeat-Filter: KeyDown nur einmal feuern, bis ein KeyUp kommt).
-        self._down: set[int] = set()
+        # vk → (mods, vk) der beim KeyDown getriggerten Bindung. Per-Bindung-
+        # statt vk-only-Tracking, damit beim KeyUp die richtige Bindung
+        # gefunden wird, auch wenn Modifier vorher released wurden (typisch
+        # bei Makro-Tastaturen, die Modifier vor der Haupttaste loslassen).
+        self._down: dict[int, tuple[int, int]] = {}
         self._lock = threading.Lock()
         self._paused = False
         self._hook = None  # HHOOK
@@ -269,6 +294,9 @@ class HotkeyManager:
     def resume(self) -> None:
         with self._lock:
             self._paused = False
+            # Saubere Wiederaufnahme — sonst koennten Press-Tracking-Reste
+            # aus der Pause-Phase als stuck-keys liegen bleiben.
+            self._down.clear()
 
     def start(self) -> None:
         """Startet den Hook-Thread. Idempotent."""
@@ -338,6 +366,78 @@ class HotkeyManager:
         Arbeit synchron machen — alles ins Worker-Thread auslagern."""
         threading.Thread(target=cb, daemon=True, name="HkDispatch").start()
 
+    # Sentinel-Returns von _handle_event — Win32-frei, damit die Methode
+    # ohne ctypes testbar bleibt.
+    _PASS = 0  # an Windows weiterreichen (CallNextHookEx)
+    _SUPPRESS = 1  # an Windows nicht weiterreichen (Return 1)
+
+    def _handle_event(self, vk: int, is_down: bool, is_up: bool,
+                      mods: int, bindings_snapshot: dict) -> int:
+        """Press/Release-Kernlogik. Pure Python, ohne Win32 testbar.
+
+        Returnwerte: _PASS (durchreichen) oder _SUPPRESS (blocken).
+        """
+        if is_down:
+            if vk in self._down:
+                # Auto-Repeat — bereits getrackt, kein erneuter Trigger.
+                if _HK_DEBUG:
+                    tracked = self._down[vk]
+                    print(f"[HK]   -> auto-repeat suppress "
+                          f"(tracked={_mods_to_str(tracked[0])},"
+                          f"vk=0x{tracked[1]:02X}; current mods="
+                          f"{_mods_to_str(mods)})",
+                          file=sys.stderr, flush=True)
+                return self._SUPPRESS
+            entry = bindings_snapshot.get((mods, vk))
+            if entry is None and mods != 0:
+                if _HK_DEBUG:
+                    print(f"[HK]   -> press no-match ({_mods_to_str(mods)},"
+                          f"vk=0x{vk:02X}) with mods!=0, pass-through",
+                          file=sys.stderr, flush=True)
+                return self._PASS
+            if entry is None:
+                if _HK_DEBUG:
+                    bound = sorted((_mods_to_str(m), f"0x{v:02X}")
+                                   for (m, v) in bindings_snapshot.keys())
+                    print(f"[HK]   -> press no-match (0,vk=0x{vk:02X}); "
+                          f"bound={bound}, pass-through",
+                          file=sys.stderr, flush=True)
+                return self._PASS
+            on_press, _on_rel = entry
+            # Bindung merken, damit der KeyUp die passende on_release findet
+            # — auch wenn Modifier vorher released werden (Makro-Tastaturen).
+            self._down[vk] = (mods, vk)
+            if _HK_DEBUG:
+                print(f"[HK]   -> press matched ({_mods_to_str(mods)},"
+                      f"vk=0x{vk:02X}) -> on_press, suppress",
+                      file=sys.stderr, flush=True)
+            self._dispatch(on_press)
+            return self._SUPPRESS
+
+        if is_up:
+            tracked = self._down.pop(vk, None)
+            if tracked is None:
+                if _HK_DEBUG:
+                    print(f"[HK]   -> up not tracked (vk=0x{vk:02X}), "
+                          f"pass-through",
+                          file=sys.stderr, flush=True)
+                return self._PASS
+            entry = bindings_snapshot.get(tracked)
+            on_release = entry[1] if entry is not None else None
+            if _HK_DEBUG:
+                print(f"[HK]   -> release tracked={_mods_to_str(tracked[0])},"
+                      f"vk=0x{tracked[1]:02X} (current mods="
+                      f"{_mods_to_str(mods)}) -> "
+                      f"{'on_release' if on_release else 'no on_release'}, "
+                      f"suppress",
+                      file=sys.stderr, flush=True)
+            if on_release is not None:
+                self._dispatch(on_release)
+            return self._SUPPRESS
+
+        # Weder Down noch Up (z.B. unbekannter wParam) — durchreichen.
+        return self._PASS
+
     def _low_level_proc(self, nCode: int, wParam: int, lParam: int):
         # nCode < 0 → laut Doku einfach durchreichen, nicht inspizieren
         if nCode != HC_ACTION:
@@ -352,14 +452,30 @@ class HotkeyManager:
             is_down = wParam in (WM_KEYDOWN, WM_SYSKEYDOWN)
             is_up   = wParam in (WM_KEYUP,   WM_SYSKEYUP)
 
+            if _HK_DEBUG:
+                mods_now = _modifier_state()
+                print(
+                    f"[HK] vk=0x{vk:02X}({vk}) "
+                    f"{_WPARAM_NAMES.get(wParam, f'0x{wParam:04X}')} "
+                    f"mods={_mods_to_str(mods_now)} flags=0x{flags:02X} "
+                    f"down={sorted(self._down)}",
+                    file=sys.stderr, flush=True,
+                )
+
             # Injected Events (z.B. pyautogui Ctrl+V vom Daemon nach Diktat)
             # NIE als Hotkey behandeln — sonst können wir uns selbst ins
             # Knie schießen, indem wir den eigenen Auto-Paste suppressen.
             if flags & (LLKHF_INJECTED | LLKHF_LOWER_IL_INJECTED):
+                if _HK_DEBUG:
+                    print("[HK]   -> injected, pass-through",
+                          file=sys.stderr, flush=True)
                 return _user32.CallNextHookEx(self._hook, nCode, wParam, lParam)
 
             if vk in _MODIFIER_VKS:
                 # Modifier selbst nie als Haupttaste — durchreichen.
+                if _HK_DEBUG:
+                    print("[HK]   -> modifier-vk, pass-through",
+                          file=sys.stderr, flush=True)
                 return _user32.CallNextHookEx(self._hook, nCode, wParam, lParam)
 
             with self._lock:
@@ -367,40 +483,16 @@ class HotkeyManager:
                 bindings_snapshot = dict(self._bindings)
 
             if paused:
+                if _HK_DEBUG:
+                    print("[HK]   -> paused, pass-through",
+                          file=sys.stderr, flush=True)
                 return _user32.CallNextHookEx(self._hook, nCode, wParam, lParam)
 
             mods = _modifier_state()
-
-            # Match: erst exakter Modifier-Match (mods,vk), sonst Fallback
-            # (0,vk) für modifier-lose Bindings (z.B. CapsLock alleine).
-            # Beide Pfade lookup, um Auto-Repeat sauber zu tracken.
-            entry = bindings_snapshot.get((mods, vk))
-            if entry is None and mods != 0:
-                # Modifier sind gedrückt, aber wir haben keinen passenden
-                # Hotkey — durchreichen, kein Suppress.
-                return _user32.CallNextHookEx(self._hook, nCode, wParam, lParam)
-            if entry is None:
-                # Kein Hotkey für diese Taste — durchreichen.
-                return _user32.CallNextHookEx(self._hook, nCode, wParam, lParam)
-
-            on_press, on_release = entry
-            if is_down:
-                if vk in self._down:
-                    # Auto-Repeat: kein erneuter Trigger, aber Event suppressen
-                    return 1
-                self._down.add(vk)
-                # Worker-Thread, damit HTTP-Latenz den 300-ms-Hook-Timeout
-                # nicht reißt.
-                self._dispatch(on_press)
-                return 1  # suppress
-            elif is_up:
-                if vk not in self._down:
-                    # KeyUp ohne vorheriges KeyDown (z.B. nach pause/resume)
-                    return 1
-                self._down.discard(vk)
-                if on_release is not None:
-                    self._dispatch(on_release)
-                return 1  # suppress
+            rv = self._handle_event(vk, is_down, is_up, mods, bindings_snapshot)
+            if rv == self._SUPPRESS:
+                return 1
+            # _PASS
         except Exception as e:  # noqa: BLE001
             # Defensiv: ein Crash im Hook-Callback würde den Hook abreißen.
             print(f"[HotkeyHook] proc error: {type(e).__name__}: {e}",

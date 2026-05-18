@@ -154,5 +154,131 @@ class TestHotkeyManagerBind(unittest.TestCase):
         self.assertFalse(mgr._paused)
 
 
+class TestHandleEventMacroKeyboard(unittest.TestCase):
+    """Regressionstests fuer den Makro-Tastatur-Bug (siehe tray.log-Analyse
+    2026-05-18): Modifier werden vor der Haupttaste released, dadurch fand
+    der KeyUp die Bindung nicht mehr → Aufnahme blieb haengen + Cycle ueber
+    dieselbe vk wurde durch den vk-only Auto-Repeat-Filter blockiert.
+
+    Wir testen `_handle_event` direkt — pure Python, kein Win32 noetig.
+    `_dispatch` wird durch synchrones Tracking ersetzt.
+    """
+
+    def setUp(self) -> None:
+        self.mgr = kh.HotkeyManager()
+        self.calls: list[str] = []
+        # _dispatch synchron + tracking, damit wir die Callbacks zaehlen
+        # koennen ohne echten Worker-Thread.
+        self.mgr._dispatch = lambda cb: cb()
+        # Per-Test wird ein on_press/on_release-Pair pro logischem Hotkey
+        # registriert. Die Lambdas haengen Strings an self.calls.
+        self.vk_f1 = 0x70
+
+    def _press(self, vk: int, mods: int) -> int:
+        snap = dict(self.mgr._bindings)
+        return self.mgr._handle_event(vk, is_down=True, is_up=False,
+                                       mods=mods, bindings_snapshot=snap)
+
+    def _release(self, vk: int, mods: int) -> int:
+        snap = dict(self.mgr._bindings)
+        return self.mgr._handle_event(vk, is_down=False, is_up=True,
+                                       mods=mods, bindings_snapshot=snap)
+
+    def test_macro_release_first_modifier_triggers_on_release(self) -> None:
+        """Beim KeyUp sind alle Modifier schon weg (mods=0). on_release
+        muss trotzdem feuern und _down muss sauber sein."""
+        self.mgr.bind("^#F1",
+                      on_press=lambda: self.calls.append("press"),
+                      on_release=lambda: self.calls.append("release"))
+        # Press mit echten Modifiern
+        rv_down = self._press(self.vk_f1, kh.MOD_CTRL | kh.MOD_WIN)
+        # Up mit mods=0 (Makro hat Modifier zuerst released)
+        rv_up = self._release(self.vk_f1, 0)
+        self.assertEqual(rv_down, kh.HotkeyManager._SUPPRESS)
+        self.assertEqual(rv_up, kh.HotkeyManager._SUPPRESS)
+        self.assertEqual(self.calls, ["press", "release"])
+        self.assertEqual(self.mgr._down, {},
+                         "vk darf nach Release nicht in _down haengen")
+
+    def test_cross_talk_main_and_cycle_same_vk(self) -> None:
+        """Main ^#F1 und Cycle ^+F1 teilen sich vk=F1. Nach Main-Press
+        + sauberem Release muss Cycle anschliessend wieder triggern —
+        also DARF _down nach Release nicht F1 enthalten."""
+        self.mgr.bind("^#F1",
+                      on_press=lambda: self.calls.append("main_press"),
+                      on_release=lambda: self.calls.append("main_release"))
+        self.mgr.bind("^+F1",
+                      on_press=lambda: self.calls.append("cycle"))
+        # Main-Sequenz (Makro-Pattern: Up mit mods=0)
+        self._press(self.vk_f1, kh.MOD_CTRL | kh.MOD_WIN)
+        self._release(self.vk_f1, 0)
+        # Cycle-Druck danach — muss triggern
+        self._press(self.vk_f1, kh.MOD_CTRL | kh.MOD_SHIFT)
+        self.assertEqual(self.calls,
+                         ["main_press", "main_release", "cycle"],
+                         "Cycle muss nach Main-Release triggern, kein stuck-vk")
+
+    def test_auto_repeat_blocks_second_press_until_release(self) -> None:
+        """Solange ein Press nicht released wurde, blockt Auto-Repeat
+        Folge-Presses derselben Bindung (Win32-Auto-Repeat-Verhalten)."""
+        self.mgr.bind("^#F1",
+                      on_press=lambda: self.calls.append("press"),
+                      on_release=lambda: self.calls.append("release"))
+        self._press(self.vk_f1, kh.MOD_CTRL | kh.MOD_WIN)
+        # Zweiter Down ohne dazwischenliegenden Up → suppress, kein 2. press
+        rv = self._press(self.vk_f1, kh.MOD_CTRL | kh.MOD_WIN)
+        self.assertEqual(rv, kh.HotkeyManager._SUPPRESS)
+        self.assertEqual(self.calls, ["press"])
+
+    def test_release_without_prior_press_passes_through(self) -> None:
+        """Ein KeyUp ohne tracked Press (z.B. nach pause/resume oder beim
+        ersten Start mitten in einer gehaltenen Taste) wird durchgereicht,
+        kein on_release feuert."""
+        self.mgr.bind("^#F1",
+                      on_press=lambda: self.calls.append("press"),
+                      on_release=lambda: self.calls.append("release"))
+        rv = self._release(self.vk_f1, 0)
+        self.assertEqual(rv, kh.HotkeyManager._PASS)
+        self.assertEqual(self.calls, [])
+
+    def test_resume_clears_down_state(self) -> None:
+        """resume() muss _down clearen, damit pausen-bedingte stuck-keys
+        nicht den naechsten Press blockieren."""
+        self.mgr.bind("^#F1",
+                      on_press=lambda: self.calls.append("press"),
+                      on_release=lambda: self.calls.append("release"))
+        self._press(self.vk_f1, kh.MOD_CTRL | kh.MOD_WIN)
+        self.assertIn(self.vk_f1, self.mgr._down)
+        self.mgr.pause()
+        self.mgr.resume()
+        self.assertEqual(self.mgr._down, {},
+                         "resume() muss _down clearen")
+        # Folge-Press nach resume funktioniert wieder
+        self._press(self.vk_f1, kh.MOD_CTRL | kh.MOD_WIN)
+        self.assertEqual(self.calls, ["press", "press"])
+
+    def test_unmatched_press_with_modifiers_passes_through(self) -> None:
+        """Bindung ist ^#F1; Druck Ctrl+Shift+F1 (CS) trifft sie nicht und
+        muss durchgereicht werden (kein Suppress, sonst frisst der Hook
+        normale Tastenkombis)."""
+        self.mgr.bind("^#F1",
+                      on_press=lambda: self.calls.append("press"))
+        rv = self._press(self.vk_f1, kh.MOD_CTRL | kh.MOD_SHIFT)
+        self.assertEqual(rv, kh.HotkeyManager._PASS)
+        self.assertEqual(self.calls, [])
+
+    def test_no_release_callback_still_clears_down(self) -> None:
+        """Tap-only Hotkey (Cycle) hat on_release=None. Trotzdem muss
+        _down auf KeyUp aufgeraeumt werden, damit der naechste Tap geht."""
+        self.mgr.bind("^+F1",
+                      on_press=lambda: self.calls.append("cycle"))
+        self._press(self.vk_f1, kh.MOD_CTRL | kh.MOD_SHIFT)
+        self._release(self.vk_f1, 0)  # Makro: mods bereits weg
+        self.assertEqual(self.mgr._down, {})
+        # Zweiter Tap funktioniert
+        self._press(self.vk_f1, kh.MOD_CTRL | kh.MOD_SHIFT)
+        self.assertEqual(self.calls, ["cycle", "cycle"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
