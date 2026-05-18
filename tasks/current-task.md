@@ -1,15 +1,30 @@
 # Current Task — Speech2Text
 
-*Letzte Aktualisierung: 2026-05-13 (Session 11 — v1.3 Hotfix: Hook-Crash, Single-Instance, GUI mit Tabs)*
+*Letzte Aktualisierung: 2026-05-18 (Session 12 — v1.3 Live-Test grün + Release v1.3 auf GitHub)*
 *Zu lesen am Anfang jeder Session — siehe `CLAUDE.md` Arbeitsregel 1.*
 
 ---
 
 ## Aktueller Stand
 
-**Phase:** ✅ **v1.2 live + produktiv auf master.** ✅ **v1.3 hotfix-fertig auf Branch `v1.3-publish-readiness`** — vier kritische Bugs aus dem ersten Live-Test gefixt: (1) keyboard_hook lParam-Signatur falsch → User konnte nichts tippen + Auto-Paste schlug fehl; (2) Daemon-Single-Instance verhindert 4-Daemon-Race; (3) recorder-Banner-Zeile sagte „src/shortcut.ahk" → AHK-Verwirrung beseitigt; (4) Settings-GUI komplett auf ttk.Notebook-Tabs umgebaut (Allgemein/Modi/Hotkeys/Audio) mit ttk-Theme „clam", Hotkey-Section als eigenes Modul `settings_hotkey_section.py`. Mock-Smoke-Test grün, keine `ctypes.ArgumentError` mehr. 4 hängende v1.3-Daemons gekillt, alte v1.0-Autostart-LNKs entfernt. Bundles + Distribution-ZIP v1.3 neu gebaut. **Noch offen:** Push auf origin + User-Live-Test mit installierter v1.3 via `dist\Speech2Text-v1.3\install.bat`.
+**Phase:** ✅ **v1.3 live auf master + Release v1.3 auf GitHub.** User hat installierte v1.3 live getestet — Push-to-Talk + Auto-Paste funktionieren, API-Key wurde aus vorheriger Installation übernommen (DPAPI-verschlüsselt in `%APPDATA%\Speech2Text\config.json`, Update-fest weil Bundle in `%LocalAppData%\Programs\Speech2Text\` separat liegt). master per Fast-Forward auf den 13-Commits-v1.3-Branch gezogen (`54eace1` → `da9717f`), Tag `v1.3` gesetzt und gepusht, GitHub-Release v1.3 mit `Speech2Text-v1.3.zip` (86,8 MB) als Asset angelegt. Release-URL: https://github.com/OCICARPETS/Speech2Text/releases/tag/v1.3
 
 **Sessions bisher (2026-04-24):**
+
+*Session 12 (2026-05-18) — v1.3 Live-Test + Release:*
+
+**User-Bestätigung:** v1.3-Installation aus `dist\Speech2Text-v1.3\install.bat` funktioniert — Push-to-Talk-Hotkey + Auto-Paste laufen. API-Key musste nicht erneut eingegeben werden (kam aus existierender `%APPDATA%\Speech2Text\config.json` der v1.2-Installation, DPAPI-Entschlüsselung greift maschinen-/userweit, Bundle-Tausch lässt Config unberührt).
+
+**Git-Workflow:**
+- Branch `v1.3-publish-readiness` war bereits auf origin (Push während Session 11).
+- `git checkout master && git merge --ff-only v1.3-publish-readiness` — Fast-Forward `54eace1` → `da9717f`, 13 Commits, 23 Dateien (+3215 / −1349).
+- `git tag -a v1.3 -m "Speech2Text v1.3 — Publish-Readiness (AHK-Ablösung + Hotfixes)"`.
+- `git push origin master && git push origin v1.3`.
+- `gh release create v1.3 dist/Speech2Text-v1.3.zip --repo OCICARPETS/Speech2Text --title "v1.3 — Publish-Readiness (Python-Tray statt AHK)" --notes "<Heredoc mit Highlights/Hotfixes/Installation/SmartScreen-Block>"` — Release published, ZIP-Asset 86,8 MB hochgeladen.
+
+**Offene Aufräum-Punkte (nicht zwingend):**
+- Branch `v1.3-publish-readiness` lokal + auf origin löschen (`git branch -d v1.3-publish-readiness && git push origin --delete v1.3-publish-readiness`).
+- Distribution-ZIP-Blob aus früheren Commits steckt weiter in Git-History (Hinweis aus Session 8) — bei Bedarf später per `git filter-repo`.
 
 *Session 11 (2026-05-13 morgens) — v1.3 Hotfix nach erstem Live-Test:*
 
@@ -286,6 +301,7 @@
 - ❌ **Schritt 4c (Inno Setup)** verworfen — Variante B reicht für Single-User + Rechner-Wechsel (Bundle-Exes sind self-contained, kein Python/AHK auf Zielrechner nötig).
 - ✅ **Schritt 6 — Hotkey-Layer-Ausbau** (Session 7, 2026-05-09): freie Hotkey-Belegung per Capture-Dialog, Modus-Hotkeys (Push-to-Talk in fixem Modus), Cycle-Hotkey mit Checkbox-Auswahl, Pause/Resume-Mechanismus für Capture, dynamische Hotkey-Bindung in AHK. Bundles + Distribution-ZIP auf v1.1.
 - ✅ **ARM64-Windows-Support + Settings-GUI-Resize** (Session 9, 2026-05-12): `_arch_fix.py`-Pre-Import-Shim für sounddevice-DLL-Auswahl auf ARM64-Host im x64-Prozess, Settings-GUI mit Footer-pack-bottom + Canvas-Scroll + Bildschirm-Capping. Live-validiert auf ARM64-PC (Settings-GUI + Push-to-Talk grün). Commits `78835f4` + `54eace1`, Tag `v1.2` gepusht.
+- ✅ **v1.3 Publish-Readiness** (Sessions 10–12, 2026-05-12 bis 2026-05-18): AHK komplett abgelöst durch Python (`keyboard_hook.py` Win32 Low-Level-Hook + `tray_app.py` pystray-Tray), Daemon-HTTP-Client (`daemon_client.py`), Settings-GUI auf `ttk.Notebook`-Tabs mit Hotkey-Section in eigenem Modul, LIZENZEN.txt, SmartScreen-Hinweis, 4 Hotfixes aus Live-Test. Master auf `da9717f`, Tag `v1.3` + Release auf GitHub mit ZIP-Asset (86,8 MB). Live-validiert.
 
 ---
 
@@ -447,15 +463,16 @@ Falls MVP stabil läuft:
 
 ## Wiedereinstieg nächste Session
 
-**Stand:** v1.1 stable, alle bisherigen Features live-validiert. Code liegt unter `OCICARPETS/Speech2Text` (privat). Distribution läuft über **GitHub Releases** — v1.1 ist online unter https://github.com/OCICARPETS/Speech2Text/releases/tag/v1.1. Konkret offen:
+**Stand:** v1.3 stable, live-validiert auf User-PC. Code liegt unter `OCICARPETS/Speech2Text` (privat) auf master (`da9717f`). Distribution läuft über **GitHub Releases** — v1.3 ist online unter https://github.com/OCICARPETS/Speech2Text/releases/tag/v1.3 mit `Speech2Text-v1.3.zip` (86,8 MB) als Asset. Konkret offen:
 
-1. **Optionale Verifikation:** v1.1-ZIP auf Zweit-PC installieren — bestätigt, dass die Hotkey-Features auch via install.bat funktionieren. Test wie in Session-7-Block (3 Bundles, Capture-Dialog, Cycle, Modus-Hotkey). Download direkt vom Release-Asset: `https://github.com/OCICARPETS/Speech2Text/releases/download/v1.1/Speech2Text-v1.1.zip`.
+1. **Cleanup (5 Min):** Branch `v1.3-publish-readiness` lokal + auf origin löschen, sobald sicher ist, dass v1.3 stabil bleibt.
 2. **Veröffentlichung/Kommerz** (Brainstorming Session 7 vertagt): Architektur-Umbau (BYO-Key vs. eigenes Backend), Branding/Marke, Distribution (Code-Signing, Microsoft Store, Website), Recht (DSGVO, AGB, Auftragsverarbeitung mit OpenAI), Monetarisierung. Eigener Brainstorming-Block fällig — Block-Liste aus Session 7 als Startpunkt.
-3. **Kleinere Aufräum-Punkte** (Vorschläge, nicht zwingend):
-   - Refactoring `src/settings.py` (~890 Zeilen → unter Hard-Limit), Hotkey-Slot-Widgets in eigenes Modul.
+3. **Visueller Polish-Check** (offen seit Session 11): pystray-Tray-Icon + Settings-GUI-Tabs sind funktional grün, aber visuell nur durch User-Live-Test in Session 12 bestätigt. Bei Bedarf Feinschliff.
+4. **Kleinere Aufräum-Punkte** (Vorschläge, nicht zwingend):
    - RDP-Hinweis im Capture-Dialog für Win-Kombis (Win+L sperrt im RDP den lokalen Client).
    - Drag&Drop-Sortierung Cycle-Loop, falls 5+ Modi mal im Loop.
    - API-Kosten-Zähler (Long-List in `Projektplanung/FEATURE_UEBERSICHT.md`).
+   - Eigener Win32-Tray (Shell_NotifyIconW) statt pystray, falls echte Kommerzialisierung — LGPL-Erwähnung in App-Bundle wäre dann weg.
 
 ### Build- und Release-Workflow
 
