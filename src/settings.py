@@ -27,11 +27,13 @@ from tkinter import messagebox, ttk
 import config as cfg_mod
 import daemon_client as dc
 from settings_helpers import (
-    AUDIO_DEFAULT_LABEL, DIRTY_FG, ERROR_FG, GROUP_FONT, HELP_API_KEY,
-    HELP_AUDIO, HELP_MODE_NAME, HELP_MODE_PROMPT, HELP_PASTE_MODE,
-    HELP_POSTROLL, HELP_PREBUFFER, HELP_PREROLL, HINT_FG, MIC_TEST_DURATION_S,
-    MODE_PROMPT_SOFT_MAX, PAD_X, PAD_Y, PASTE_MODES, POSTROLL_MS_MAX,
-    PREROLL_MS_MAX, SAMPLE_RATE, TAB_PADDING, THEME_NAME, list_input_devices,
+    AUDIO_DEFAULT_LABEL, DIRTY_FG, ERROR_FG_BY_THEME, FONT_GROUP, FONT_HINT,
+    GROUP_FG_BY_THEME, HELP_API_KEY, HELP_AUDIO, HELP_MODE_NAME,
+    HELP_MODE_PROMPT, HELP_PASTE_MODE, HELP_POSTROLL, HELP_PREBUFFER,
+    HELP_PREROLL, HINT_FG_BY_THEME, LABELFRAME_INNER_PAD, MIC_TEST_DURATION_S,
+    MODE_PROMPT_SOFT_MAX, PAD_X, PAD_Y, PAD_Y_GROUP, PASTE_MODES,
+    POSTROLL_MS_MAX, PREROLL_MS_MAX, SAMPLE_RATE, TAB_PADDING, THEME_CHOICES,
+    THEME_DEFAULT, THEME_FALLBACK, list_input_devices,
 )
 from settings_hotkey_section import HotkeySection
 
@@ -50,13 +52,19 @@ class SettingsWindow:
         self.cfg = cfg_mod.load_config()
         self.root = tk.Tk()
         self.root.title("Speech2Text — Einstellungen")
-        self._apply_theme()
+        initial_theme = self.cfg.get("theme", THEME_DEFAULT)
+        if initial_theme not in THEME_CHOICES:
+            initial_theme = THEME_DEFAULT
+        self._current_theme = initial_theme
+        self._apply_theme(initial_theme)
 
-        # Init-Größe an Bildschirm klemmen
+        # Init-Größe an Bildschirm klemmen — vergrößert auf 720x860, damit
+        # die „Darstellung"-Gruppe im Allgemein-Tab direkt sichtbar ist
+        # (nach Layout-Refactor v1.4 mit größerem LabelFrame-Spacing).
         sw = self.root.winfo_screenwidth()
         sh = self.root.winfo_screenheight()
-        self.root.geometry(f"{min(700, sw - 40)}x{min(640, sh - 80)}")
-        self.root.minsize(580, 460)
+        self.root.geometry(f"{min(720, sw - 40)}x{min(860, sh - 80)}")
+        self.root.minsize(600, 480)
 
         # State für Mode-Editor (working copy aktueller Session)
         self._mode_edits: dict[str, dict] = {}
@@ -72,20 +80,46 @@ class SettingsWindow:
             set_status=lambda t: self.status_var.set(t),
         )
         self._build_ui()
+        # Sub-Styles nach _build_ui nochmal applizieren — sonst greifen
+        # Hint/Error/Dirty-Subklassen beim Initial-Render nicht sauber
+        # (ttk-Quirk mit Sun Valley v2.6.x).
+        self._apply_theme(initial_theme)
 
     # ------------------------------------------------------------ Theme
 
-    def _apply_theme(self) -> None:
-        style = ttk.Style(self.root)
+    def _apply_theme(self, theme: str) -> None:
+        # Sun Valley via sv-ttk. Bei ImportError/TclError Fallback auf
+        # ttk-Built-in clam, damit das Fenster IMMER öffnet.
         try:
-            style.theme_use(THEME_NAME)
-        except tk.TclError:
-            pass  # Theme nicht verfügbar — Fallback auf System-Theme
-        style.configure("TLabelframe.Label", font=GROUP_FONT)
-        style.configure("Hint.TLabel", foreground=HINT_FG)
+            import sv_ttk
+            sv_ttk.set_theme(theme)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[settings] sv-ttk Theme-Fehler ({exc!r}) — "
+                  f"Fallback {THEME_FALLBACK}", file=sys.stderr)
+            try:
+                ttk.Style(self.root).theme_use(THEME_FALLBACK)
+            except tk.TclError:
+                pass
+
+        # Sub-Styles + LabelFrame-Header. Beim TLabelframe.Label MUSS der
+        # foreground explizit gesetzt werden, sonst fällt ttk auf den
+        # System-Default (schwarz) zurück und Dark-Mode wird unlesbar.
+        style = ttk.Style(self.root)
+        style.configure(
+            "TLabelframe.Label",
+            font=FONT_GROUP,
+            foreground=GROUP_FG_BY_THEME[theme],
+        )
+        style.configure(
+            "Hint.TLabel",
+            foreground=HINT_FG_BY_THEME[theme],
+            font=FONT_HINT,
+        )
         style.configure("Dirty.TLabel", foreground=DIRTY_FG)
-        style.configure("Error.TLabel", foreground=ERROR_FG)
-        style.configure("TNotebook.Tab", padding=(12, 6))
+        style.configure("Error.TLabel", foreground=ERROR_FG_BY_THEME[theme])
+
+        self._current_theme = theme
+        self.root.update_idletasks()
 
     # ------------------------------------------------------------ UI-Top
 
@@ -128,8 +162,8 @@ class SettingsWindow:
         parent.columnconfigure(0, weight=1)
 
         # --- Gruppe „Zugang" ------------------------------------------
-        grp = ttk.LabelFrame(parent, text="Zugang", padding=10)
-        grp.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+        grp = ttk.LabelFrame(parent, text="Zugang", padding=LABELFRAME_INNER_PAD)
+        grp.grid(row=0, column=0, sticky="ew", pady=(0, PAD_Y_GROUP))
         grp.columnconfigure(1, weight=1)
 
         ttk.Label(grp, text="OpenAI API-Key").grid(row=0, column=0, sticky="w", pady=4)
@@ -153,8 +187,8 @@ class SettingsWindow:
         )
 
         # --- Gruppe „Texteinfügung" -----------------------------------
-        grp = ttk.LabelFrame(parent, text="Texteinfügung", padding=10)
-        grp.grid(row=1, column=0, sticky="ew", pady=(0, 10))
+        grp = ttk.LabelFrame(parent, text="Texteinfügung", padding=LABELFRAME_INNER_PAD)
+        grp.grid(row=1, column=0, sticky="ew", pady=(0, PAD_Y_GROUP))
         grp.columnconfigure(1, weight=1)
         ttk.Label(grp, text="Paste-Modus").grid(row=0, column=0, sticky="w", pady=4)
         self.paste_keys = [k for k, _ in PASTE_MODES]
@@ -173,8 +207,8 @@ class SettingsWindow:
         )
 
         # --- Gruppe „Aufnahme" ----------------------------------------
-        grp = ttk.LabelFrame(parent, text="Aufnahme", padding=10)
-        grp.grid(row=2, column=0, sticky="ew")
+        grp = ttk.LabelFrame(parent, text="Aufnahme", padding=LABELFRAME_INNER_PAD)
+        grp.grid(row=2, column=0, sticky="ew", pady=(0, PAD_Y_GROUP))
         grp.columnconfigure(1, weight=1)
 
         self.prebuffer_var = tk.BooleanVar(
@@ -220,6 +254,40 @@ class SettingsWindow:
                   wraplength=480, justify="left").grid(
             row=5, column=1, sticky="w", pady=(0, 4), padx=(8, 0),
         )
+
+        # --- Gruppe „Darstellung" -------------------------------------
+        grp = ttk.LabelFrame(parent, text="Darstellung", padding=LABELFRAME_INNER_PAD)
+        grp.grid(row=3, column=0, sticky="ew")
+        grp.columnconfigure(1, weight=1)
+        ttk.Label(grp, text="Erscheinungsbild").grid(
+            row=0, column=0, sticky="w", pady=4,
+        )
+        self.theme_labels = {"dark": "Dark", "light": "Light"}
+        self.theme_var = tk.StringVar(
+            value=self.theme_labels.get(self._current_theme, "Dark"),
+        )
+        ttk.Combobox(
+            grp, textvariable=self.theme_var,
+            values=list(self.theme_labels.values()), state="readonly",
+        ).grid(row=0, column=1, sticky="ew", pady=4, padx=(8, 0))
+        self.theme_var.trace_add("write", self._on_theme_change)
+        ttk.Label(
+            grp,
+            text="Sun-Valley-Theme (Windows-11-Fluent-Look). Live-Umschaltung "
+                 "ohne Neustart — wirkt sofort.",
+            style="Hint.TLabel", wraplength=480, justify="left",
+        ).grid(row=1, column=1, sticky="w", pady=(0, 4), padx=(8, 0))
+
+    def _on_theme_change(self, *_) -> None:
+        label = self.theme_var.get()
+        new_theme = next(
+            (k for k, v in self.theme_labels.items() if v == label),
+            "dark",
+        )
+        if new_theme == self._current_theme:
+            return
+        self._apply_theme(new_theme)
+        self._mark_dirty()
 
     # ------------------------------------------------------------ Modi-Tab
 
@@ -306,8 +374,8 @@ class SettingsWindow:
     def _build_audio_tab(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(0, weight=1)
 
-        grp = ttk.LabelFrame(parent, text="Eingabe-Gerät", padding=10)
-        grp.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+        grp = ttk.LabelFrame(parent, text="Eingabe-Gerät", padding=LABELFRAME_INNER_PAD)
+        grp.grid(row=0, column=0, sticky="ew", pady=(0, PAD_Y_GROUP))
         grp.columnconfigure(0, weight=1)
 
         self.audio_devices = list_input_devices()
@@ -326,7 +394,7 @@ class SettingsWindow:
             row=1, column=0, sticky="w", pady=(0, 6),
         )
 
-        grp = ttk.LabelFrame(parent, text="Mikrofon testen", padding=10)
+        grp = ttk.LabelFrame(parent, text="Mikrofon testen", padding=LABELFRAME_INNER_PAD)
         grp.grid(row=1, column=0, sticky="ew")
         grp.columnconfigure(0, weight=1)
         self.mic_test_btn = ttk.Button(
@@ -352,7 +420,10 @@ class SettingsWindow:
         n = len(text)
         over = n > MODE_PROMPT_SOFT_MAX
         self.mode_count_var.set(f"{n} / {MODE_PROMPT_SOFT_MAX} Zeichen")
-        self.mode_count_label.configure(foreground=ERROR_FG if over else HINT_FG)
+        self.mode_count_label.configure(
+            foreground=ERROR_FG_BY_THEME[self._current_theme] if over
+            else HINT_FG_BY_THEME[self._current_theme],
+        )
 
     def _on_prompt_changed(self, _event) -> None:
         self._update_prompt_count()
@@ -482,6 +553,7 @@ class SettingsWindow:
         new_cfg["postroll_ms"] = postroll
         new_cfg["mode_overrides"] = new_overrides
         new_cfg["manual_prompt"] = ""
+        new_cfg["theme"] = self._current_theme
         new_cfg.pop("hotkey", None)
         # Hotkeys + cycle_loop schreibt die HotkeySection direkt ins dict
         self._hotkeys.apply_to_config(new_cfg)

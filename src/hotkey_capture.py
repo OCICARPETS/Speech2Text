@@ -129,9 +129,9 @@ class HotkeyCaptureDialog:
         outer.columnconfigure(0, weight=1)
 
         if slot_label:
-            ttk.Label(outer, text=f"Slot: {slot_label}", foreground="#666").grid(
-                row=0, column=0, sticky="w", pady=(0, 6),
-            )
+            ttk.Label(
+                outer, text=f"Slot: {slot_label}", style="Hint.TLabel",
+            ).grid(row=0, column=0, sticky="w", pady=(0, 6))
 
         ttk.Label(
             outer,
@@ -142,13 +142,13 @@ class HotkeyCaptureDialog:
 
         self._preview_var = tk.StringVar(value="(noch keine Eingabe)")
         ttk.Label(
-            outer, textvariable=self._preview_var, font=("Segoe UI", 12, "bold"),
-            foreground="#222",
+            outer, textvariable=self._preview_var,
+            font=("Segoe UI", 12, "bold"),
         ).grid(row=2, column=0, sticky="w", pady=(0, 6))
 
         self._error_var = tk.StringVar(value="")
         ttk.Label(
-            outer, textvariable=self._error_var, foreground="#c00",
+            outer, textvariable=self._error_var, style="Error.TLabel",
             wraplength=380, justify="left",
         ).grid(row=3, column=0, sticky="w", pady=(0, 10))
 

@@ -35,6 +35,7 @@ if ($Clean) {
 }
 
 # --collect-all sounddevice fuer den Mikrofon-Test (rec/play/query_devices).
+# --collect-all sv_ttk fuer das Sun-Valley-Theme (TCL-Assets im Package).
 # tkinter wird von PyInstaller automatisch gefunden.
 # --paths .\src damit `import config` aus settings.py funktioniert.
 $PyiArgs = @(
@@ -48,6 +49,7 @@ $PyiArgs = @(
     "--specpath", ".\build",
     "--paths", (Resolve-Path ".\src").Path,
     "--collect-all", "sounddevice",
+    "--collect-all", "sv_ttk",
     "--noconfirm",
     $Source
 )

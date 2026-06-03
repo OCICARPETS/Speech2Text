@@ -22,6 +22,7 @@ from typing import Callable
 import config as cfg_mod
 import daemon_client as dc
 from hotkey_capture import HotkeyCaptureDialog, format_hotkey_for_display
+from settings_helpers import LABELFRAME_INNER_PAD, PAD_Y_GROUP
 
 
 class HotkeySection:
@@ -60,90 +61,85 @@ class HotkeySection:
     # ---------------------------------------------------------------- Build
 
     def build_hotkeys_tab(self, parent: ttk.Frame) -> None:
-        """Baut Main-Slot, Cycle-Slot und Übersicht in den Hotkeys-Tab."""
-        parent.columnconfigure(1, weight=1)
-        row = 0
+        """Baut Main-Slot, Cycle-Slot und Übersicht — jeweils in eigener
+        LabelFrame-Gruppe (v1.4 Layout-Refactor)."""
+        parent.columnconfigure(0, weight=1)
 
-        # --- Haupt-Hotkey ----------------------------------------------
-        ttk.Label(parent, text="Haupt-Hotkey").grid(
-            row=row, column=0, sticky="w", pady=4,
+        # --- Gruppe „Haupt-Hotkey" -------------------------------------
+        grp_main = ttk.LabelFrame(
+            parent, text="Haupt-Hotkey", padding=LABELFRAME_INNER_PAD,
         )
-        main_frame = ttk.Frame(parent)
-        main_frame.grid(row=row, column=1, sticky="ew", pady=4)
-        main_frame.columnconfigure(0, weight=1)
+        grp_main.grid(row=0, column=0, sticky="ew", pady=(0, PAD_Y_GROUP))
+        grp_main.columnconfigure(0, weight=1)
+        main_row = ttk.Frame(grp_main)
+        main_row.grid(row=0, column=0, sticky="ew")
+        main_row.columnconfigure(0, weight=1)
         self._main_hotkey_var = tk.StringVar(
             value=format_hotkey_for_display(self._main_hotkey),
         )
         ttk.Label(
-            main_frame, textvariable=self._main_hotkey_var,
+            main_row, textvariable=self._main_hotkey_var,
             relief="groove", padding=4, font=("Segoe UI", 10, "bold"),
         ).grid(row=0, column=0, sticky="ew")
         ttk.Button(
-            main_frame, text="🎯 Erfassen…",
+            main_row, text="🎯 Erfassen…",
             command=self._capture_main,
         ).grid(row=0, column=1, padx=(8, 0))
-        row += 1
         ttk.Label(
-            parent,
+            grp_main,
             text="Push-to-Talk-Taste: halten zum Aufnehmen, loslassen zum "
                  "Beenden + Transkribieren.",
-            foreground="#666", wraplength=460, justify="left",
-        ).grid(row=row, column=1, sticky="w", pady=(0, 8))
-        row += 1
+            style="Hint.TLabel", wraplength=520, justify="left",
+        ).grid(row=1, column=0, sticky="w", pady=(8, 0))
 
-        # --- Cycle-Hotkey ----------------------------------------------
-        ttk.Label(parent, text="Cycle-Hotkey").grid(
-            row=row, column=0, sticky="w", pady=4,
+        # --- Gruppe „Cycle-Hotkey" -------------------------------------
+        grp_cycle = ttk.LabelFrame(
+            parent, text="Cycle-Hotkey", padding=LABELFRAME_INNER_PAD,
         )
-        cycle_frame = ttk.Frame(parent)
-        cycle_frame.grid(row=row, column=1, sticky="ew", pady=4)
-        cycle_frame.columnconfigure(0, weight=1)
+        grp_cycle.grid(row=1, column=0, sticky="ew", pady=(0, PAD_Y_GROUP))
+        grp_cycle.columnconfigure(0, weight=1)
+        cycle_row = ttk.Frame(grp_cycle)
+        cycle_row.grid(row=0, column=0, sticky="ew")
+        cycle_row.columnconfigure(0, weight=1)
         self._cycle_hotkey_var = tk.StringVar(
             value=format_hotkey_for_display(self._cycle_hotkey),
         )
         ttk.Label(
-            cycle_frame, textvariable=self._cycle_hotkey_var,
+            cycle_row, textvariable=self._cycle_hotkey_var,
             relief="groove", padding=4, font=("Segoe UI", 10, "bold"),
         ).grid(row=0, column=0, sticky="ew")
         ttk.Button(
-            cycle_frame, text="🎯 Erfassen…",
+            cycle_row, text="🎯 Erfassen…",
             command=self._capture_cycle,
         ).grid(row=0, column=1, padx=(8, 0))
         ttk.Button(
-            cycle_frame, text="✕ Löschen",
+            cycle_row, text="✕ Löschen",
             command=self._clear_cycle,
         ).grid(row=0, column=2, padx=(6, 0))
-        row += 1
         ttk.Label(
-            parent,
+            grp_cycle,
             text="Tipp-Hotkey, der den aktiven Modus durch die Cycle-Modi "
                  "(siehe Modi-Tab) durchschaltet. Leer = nicht benutzt.",
-            foreground="#666", wraplength=460, justify="left",
-        ).grid(row=row, column=1, sticky="w", pady=(0, 12))
-        row += 1
+            style="Hint.TLabel", wraplength=520, justify="left",
+        ).grid(row=1, column=0, sticky="w", pady=(8, 0))
 
-        # --- Trennlinie + Übersicht ------------------------------------
-        ttk.Separator(parent, orient="horizontal").grid(
-            row=row, column=0, columnspan=2, sticky="ew", pady=(4, 8),
+        # --- Gruppe „Hotkey-Übersicht" ---------------------------------
+        grp_overview = ttk.LabelFrame(
+            parent, text="Hotkey-Übersicht", padding=LABELFRAME_INNER_PAD,
         )
-        row += 1
-        ttk.Label(
-            parent, text="Hotkey-Übersicht",
-            font=("Segoe UI", 9, "bold"),
-        ).grid(row=row, column=0, columnspan=2, sticky="w", pady=(4, 4))
-        row += 1
+        grp_overview.grid(row=2, column=0, sticky="nsew")
+        grp_overview.columnconfigure(0, weight=1)
+        grp_overview.rowconfigure(0, weight=1)
+        parent.rowconfigure(2, weight=1)
         self._overview = ttk.Treeview(
-            parent, columns=("hotkey", "funktion"),
-            show="headings", height=8,
+            grp_overview, columns=("hotkey", "funktion"),
+            show="headings", height=6,
         )
         self._overview.heading("hotkey", text="Hotkey")
         self._overview.heading("funktion", text="Funktion")
         self._overview.column("hotkey", width=200, anchor="w")
         self._overview.column("funktion", width=420, anchor="w")
-        self._overview.grid(row=row, column=0, columnspan=2,
-                            sticky="nsew", pady=(0, 4))
-        parent.rowconfigure(row, weight=1)
-        row += 1
+        self._overview.grid(row=0, column=0, sticky="nsew")
         self.refresh_overview()
 
     def build_mode_widgets(self, parent: ttk.Frame, row: int) -> int:

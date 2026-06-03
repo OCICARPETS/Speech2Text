@@ -64,6 +64,14 @@ python-dotenv (BSD-3-Clause)
 Source-Code: https://github.com/theskumar/python-dotenv
 
 
+sv-ttk / Sun Valley ttk-Theme (MIT)
+-----------------------------------
+Modernes Windows-11-Fluent-Theme fuer die Settings-GUI. Ab v1.4
+eingebunden, Dark + Light umschaltbar.
+Source-Code: https://github.com/rdbende/Sun-Valley-ttk-theme
+Lizenztext:  https://github.com/rdbende/Sun-Valley-ttk-theme/blob/main/LICENSE
+
+
 Datenuebertragung an OpenAI
 ============================
 Speech2Text sendet Audio-Aufnahmen an die OpenAI-Server zur Transkription

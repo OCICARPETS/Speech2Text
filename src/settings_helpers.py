@@ -16,16 +16,34 @@ PREROLL_MS_MAX = 500    # Hard-Limit aus recorder.py (= Ringpuffer-Größe)
 POSTROLL_MS_MAX = 500   # Hard-Limit aus recorder.py
 MODE_PROMPT_SOFT_MAX = 4000  # Counter wird ab hier rot — kein hartes Limit
 
-# --- UI-Theme (v1.3 GUI-Refresh) -------------------------------------------
+# --- UI-Theme (v1.4 GUI-Refresh: Sun Valley via sv-ttk) --------------------
 
-THEME_NAME = "clam"          # konsistent über Windows, weniger 90er-Look
-PAD_X = 12                   # horizontales Padding pro Sektion
-PAD_Y = 6                    # vertikales Padding pro Feld
-TAB_PADDING = (14, 12, 14, 8)  # left, top, right, bottom
-GROUP_FONT = ("Segoe UI", 9, "bold")
-HINT_FG = "#666"
-DIRTY_FG = "#B45309"         # Amber für „geändert, nicht gespeichert"
-ERROR_FG = "#c00"
+THEME_DEFAULT = "dark"           # Default beim ersten Start / wenn config-Key fehlt
+THEME_CHOICES = ("dark", "light")  # Whitelist für config-Validation
+THEME_FALLBACK = "clam"          # ttk-Built-in, falls sv_ttk fehlt/crasht
+PAD_X = 12                       # horizontales Padding pro Sektion
+PAD_Y = 6                        # vertikales Padding pro Feld
+TAB_PADDING = (14, 12, 14, 8)    # left, top, right, bottom
+PAD_Y_GROUP = 24                 # Vertikaler Abstand ZWISCHEN LabelFrames
+LABELFRAME_INNER_PAD = 18        # Innen-Padding pro LabelFrame
+
+# Theme-abhängige Vordergrundfarben — auf Dark muss Hint heller sein,
+# auf Light bleibt das alte #666 (Kontrast WCAG AA).
+HINT_FG_BY_THEME = {"dark": "#9999a0", "light": "#666666"}
+ERROR_FG_BY_THEME = {"dark": "#ef4444", "light": "#c00000"}
+DIRTY_FG = "#B45309"             # Amber — auf beiden Themes lesbar
+
+# Theme-Default-Foreground für LabelFrame-Header (Bold-Gruppentitel).
+# Wir müssen den explizit setzen, weil ttk-style.configure einen
+# Sub-Style sonst auf System-Defaults zurückfallen lässt.
+GROUP_FG_BY_THEME = {"dark": "#ffffff", "light": "#1f1f1f"}
+
+# Typografische Hierarchie (v1.4 Polish):
+#   FONT_GROUP — LabelFrame-Header („Zugang", „Texteinfügung", ...)
+#   FONT_HINT  — graue Erklärungs-Labels unter Feldern
+#   Feld-Labels nutzen den ttk-Default (Segoe UI 9 pt regular).
+FONT_GROUP = ("Segoe UI", 12, "bold")
+FONT_HINT = ("Segoe UI", 8)
 
 PASTE_MODES: list[tuple[str, str]] = [
     ("clipboard_ctrl_v", "Clipboard + Ctrl+V (Standard)"),

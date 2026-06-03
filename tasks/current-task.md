@@ -1,29 +1,45 @@
 # Current Task — Speech2Text
 
-*Letzte Aktualisierung: 2026-06-03 (Session 14 — v1.3.1 released, UX-Backlog für v1.4 aufgenommen)*
+*Letzte Aktualisierung: 2026-06-03 (Session 15 — v1.4 Punkt 2 Variante (a): Sun-Valley-Theme + Layout-Refactor live)*
 *Zu lesen am Anfang jeder Session — siehe `CLAUDE.md` Arbeitsregel 1.*
 
 ---
 
 ## Aktueller Stand
 
-**Phase:** v1.3.1 stable + live-validiert. Release auf GitHub online: <https://github.com/OCICARPETS/Speech2Text/releases/tag/v1.3.1>. Makro-Tastatur-Bug behoben (Modifier-Release-Order), Hotfix-Bundle auf User-Workstation installiert, alle drei Testszenarien (Ctrl+Win+F1 / Ctrl+Shift+F1 / Single-Key Q) grün. master = `14fb921`, Tag `v1.3.1` gepusht, working tree clean.
+**Phase:** v1.4-Punkt-2 (Settings-GUI-Modernisierung) **komplett live** auf User-Workstation. Sun-Valley ttk-Theme (sv-ttk-Package v2.6.1) eingebunden, Dark/Light-Toggle in Tab „Allgemein", Capture-Dialog theme-aware, Typografie-Hierarchie (Header 12 pt Bold, Hint 8 pt gedimmt), Layout-Refactor mit größerem Spacing (24 px zwischen LabelFrames, 18 px Innen-Padding), Hotkeys-Tab in 3 LabelFrame-Gruppen, Default-Fenstergröße auf 720×860. Settings-Exe neu gebaut + ins installierte Bundle kopiert. **Noch nicht committet.** Plan-Datei: `C:\Users\df\.claude\plans\sun-valley-ttk-theme-in-noble-hopper.md`.
 
-**Neuer Scope für v1.4 — UX-Backlog (User-Beobachtungen 2026-06-03):**
+**Verbleibender v1.4-Backlog (für nächste Sessions):**
 
-1. **Mode-Switch-Toast schneller / queue-fähig.** Beim mehrfachen Drücken des Cycle-Hotkeys hintereinander bleibt der Toast zu lange stehen, neue Switches überholen die Anzeige nicht. Ursache vermutlich: `pystray.Icon.notify()` triggert eine Windows-Toast-Notification mit System-Anzeigedauer (~5 s, nicht von uns steuerbar). Vermutete Lösung: eigenes leichtes Tk-Popup als Custom-Toast (kurze Dauer, ersetzt sich selbst beim nächsten Switch). Aufwand ~½ Session.
-2. **Settings-GUI optisch modernisieren.** Aktuell Tkinter + ttk-„clam"-Theme + LabelFrame-Gruppen. Drei Wege:
-   - (a) **Modernes ttk-Theme** einbinden (Sun-Valley.tcl oder Azure-tk) — günstig, wirksam, kein Rewrite. Aufwand ~½ Session.
-   - (b) **CustomTkinter** — moderner Look out-of-the-box, aber Migrationsaufwand für alle Widgets. ~1–2 Sessions.
-   - (c) **PySide6** — echter Rewrite. Tage.
-   - **Variante noch offen** — User entscheidet, bevor Scope startet.
-3. **Mode-Umbenennung ad-hoc in Liste übernehmen** (vom User als „sekundär" eingestuft). Aktuell wird die Mode-Auswahl-Liste nach einer Umbenennung in Settings nicht sofort aktualisiert. Vermutete Lösung: `_refresh_mode_list()` nach Save aufrufen, oder Trace auf den Override-State. Aufwand ~1 h.
+1. **Mode-Switch-Toast schneller / queue-fähig** — pystray-Win-Toast hat ~5 s System-Dauer, eigenes Tk-Custom-Popup nötig. Aufwand ~½ Session.
+3. **Mode-Umbenennung ad-hoc in Liste übernehmen** — `_refresh_mode_list()` nach Save oder Trace auf Override-State. Aufwand ~1 h.
 
-**Nächster Schritt:** Beim nächsten Session-Start vom User entscheiden lassen:
-- Reihenfolge der drei Punkte (Vorschlag: 3 → 1 → 2, weil 3 trivial, 1 mittel, 2 entscheidungsbedürftig).
-- Welche Variante für Punkt 2 (a/b/c).
+(Punkt 2 ist abgeschlossen.)
+
+**Nächster Schritt:** v1.4-Punkt-2 committen + pushen (siehe Session-15-Block unten). v1.4.0-Tag erst nach Punkt 1 + 3 setzen.
 
 **Sessions bisher (2026-04-24):**
+
+*Session 15 (2026-06-03) — v1.4-Punkt-2: Sun-Valley-Theme + Layout-Refactor (Phasen 1–10):*
+
+- **Sun-Valley-Theme** via PyPI-Package `sv-ttk==2.6.1` eingebunden (statt manueller TCL-Ablage — Original-Plan aus `plans/sun-valley-ttk-theme-in-noble-hopper.md` revidiert nach Phase-1-Recherche). PyInstaller-Hook `hook-sv_ttk.py` aus `_pyinstaller_hooks_contrib` regelt das Asset-Bundling automatisch — Build-Skript braucht nur `--collect-all sv_ttk`.
+- **`_apply_theme(theme)`** in `src/settings.py`: ruft `sv_ttk.set_theme(...)`, dann nur foreground-only Sub-Styles (`Hint.TLabel`, `Dirty.TLabel`, `Error.TLabel`) plus `TLabelframe.Label` mit explizitem `foreground` aus `GROUP_FG_BY_THEME` und `FONT_GROUP`. **Wichtige Lektion:** Custom-Style-Override für `TLabelframe.Label` nur OHNE explizites `foreground` zerbricht Sun-Valley-Dark (Header schwarz auf schwarz). Mit `foreground=GROUP_FG_BY_THEME[theme]` klappt's. Try/Except mit Fallback auf `clam` falls sv-ttk fehlt/crasht.
+- **Theme-Toggle:** Combobox „Erscheinungsbild" im neuen Allgemein-Tab-Block „Darstellung", Live-Switch ohne Restart. Persistiert in `config.json` (Key `theme`, Validation gegen `THEME_CHOICES = {dark, light}` in `src/config.py`).
+- **`_apply_theme` zweimal aufgerufen** — einmal vor `_build_ui()` (für Theme-Init), einmal nach `_build_ui()` (damit Sub-Styles auf alle frisch erstellten Widgets greifen). Sonst sehen die Hint/Error-Labels beim ersten Öffnen einen halb-applizierten Style.
+- **Capture-Dialog** (`src/hotkey_capture.py`): hartkodierte Farben `#666`/`#222`/`#c00` durch theme-aware Sub-Styles ersetzt (`Hint.TLabel`/Default-FG/`Error.TLabel`).
+- **Typografische Hierarchie:**
+  - `FONT_GROUP = ("Segoe UI", 12, "bold")` für LabelFrame-Header.
+  - `FONT_HINT = ("Segoe UI", 8)` für graue Erklärtexte.
+  - `HINT_FG_BY_THEME`, `ERROR_FG_BY_THEME`, `GROUP_FG_BY_THEME` als theme-Maps in `src/settings_helpers.py`.
+- **Layout-Refactor mit HTML-Mockup vorab** (`mockups/settings-layout-v2.html`):
+  - `PAD_Y_GROUP = 24` px zwischen LabelFrames (vorher 10).
+  - `LABELFRAME_INNER_PAD = 18` px Innen-Padding (vorher 10).
+  - **Hotkeys-Tab umgebaut** auf 3 LabelFrame-Gruppen („Haupt-Hotkey", „Cycle-Hotkey", „Hotkey-Übersicht") statt flachem Grid. `src/settings_hotkey_section.py` `build_hotkeys_tab` refaktoriert.
+  - Default-Fenster auf **720×860** (vorher 700×640) damit Allgemein-Tab inkl. Darstellung-Gruppe ohne Resize sichtbar.
+- **Combobox-Listbox-Patch** aus dem Original-Plan **entfällt** — sv-ttk v2.6.1 styled das Dropdown-Listbox selbst, kein `option_add`-Hack mehr nötig.
+- **LIZENZEN.txt** ergänzt um sv-ttk (MIT, https://github.com/rdbende/Sun-Valley-ttk-theme).
+- **Live-Test** (User-Bestätigung iterativ): Dark + Light + Toggle + Save/Reload + Capture-Dialog + Hotkeys-Gruppen + Default-Fenstergröße alles grün.
+- **Mockup-Datei:** `mockups/settings-layout-v2.html` — HTML-Datei mit Theme-Toggle, war Diskussionsgrundlage für den Layout-Refactor. Bleibt im Repo als Design-Doku für künftige Iterationen.
 
 *Session 14 (2026-06-03) — v1.3.1 Live-Validierung + Release + UX-Backlog:*
 
@@ -374,6 +390,7 @@ Start-Process "$env:LocalAppData\Programs\Speech2Text\Speech2Text-Hotkey.exe"
 - ✅ **ARM64-Windows-Support + Settings-GUI-Resize** (Session 9, 2026-05-12): `_arch_fix.py`-Pre-Import-Shim für sounddevice-DLL-Auswahl auf ARM64-Host im x64-Prozess, Settings-GUI mit Footer-pack-bottom + Canvas-Scroll + Bildschirm-Capping. Live-validiert auf ARM64-PC (Settings-GUI + Push-to-Talk grün). Commits `78835f4` + `54eace1`, Tag `v1.2` gepusht.
 - ✅ **v1.3 Publish-Readiness** (Sessions 10–12, 2026-05-12 bis 2026-05-18): AHK komplett abgelöst durch Python (`keyboard_hook.py` Win32 Low-Level-Hook + `tray_app.py` pystray-Tray), Daemon-HTTP-Client (`daemon_client.py`), Settings-GUI auf `ttk.Notebook`-Tabs mit Hotkey-Section in eigenem Modul, LIZENZEN.txt, SmartScreen-Hinweis, 4 Hotfixes aus Live-Test. Master auf `da9717f`, Tag `v1.3` + Release auf GitHub mit ZIP-Asset (86,8 MB). Live-validiert.
 - ✅ **v1.3.1 Hotfix Makro-Tastatur** (Sessions 13–14, 2026-05-18 bis 2026-06-03): `keyboard_hook.py` matched KeyUp jetzt über beim KeyDown gemerkte Bindung (unabhängig von aktueller Modifier-Maske), kein Cross-Talk mehr bei gleichem vk. +7 Regressionstests (34 grün gesamt). Tag `v1.3.1` auf master `14fb921`, GitHub-Release mit ZIP (86,8 MB). Live-validiert mit Ctrl+Win+F1 / Ctrl+Shift+F1 / Single-Key Q.
+- ✅ **v1.4 Punkt 2 — Settings-GUI-Modernisierung** (Session 15, 2026-06-03): Sun-Valley-Theme via `sv-ttk==2.6.1`, Dark/Light-Toggle in Tab „Allgemein", Capture-Dialog theme-aware, Typografie-Hierarchie (Header 12 pt Bold, Hint 8 pt), Layout-Refactor (24 px Spacing zwischen Gruppen, 18 px Innen-Padding), Hotkeys-Tab in 3 LabelFrame-Gruppen, Default-Fenster auf 720×860. HTML-Mockup als Design-Grundlage. Live-validiert in beiden Themes.
 
 ---
 

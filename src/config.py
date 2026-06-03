@@ -194,7 +194,11 @@ DEFAULT_CONFIG: dict = {
     # Legacy (vor Session 5d): eigener Manual-Prompt. Wird in load_config()
     # automatisch nach mode_overrides["manual"]["prompt"] migriert.
     "manual_prompt": "",
+    # Settings-GUI-Theme (Sun Valley via sv-ttk). "dark" | "light".
+    "theme": "dark",
 }
+
+THEME_CHOICES = ("dark", "light")
 
 
 def config_dir() -> Path:
@@ -441,6 +445,8 @@ def load_config() -> dict:
     merged.pop("hotkey", None)
     if not isinstance(merged.get("cycle_loop"), list):
         merged["cycle_loop"] = []
+    if merged.get("theme") not in THEME_CHOICES:
+        merged["theme"] = "dark"
     return merged
 
 
