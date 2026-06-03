@@ -1,15 +1,38 @@
 # Current Task — Speech2Text
 
-*Letzte Aktualisierung: 2026-05-18 (Session 13 — Makro-Tastatur-Hotkey-Bug analysiert + gefixt)*
+*Letzte Aktualisierung: 2026-06-03 (Session 14 — v1.3.1 released, UX-Backlog für v1.4 aufgenommen)*
 *Zu lesen am Anfang jeder Session — siehe `CLAUDE.md` Arbeitsregel 1.*
 
 ---
 
 ## Aktueller Stand
 
-**Phase:** Hotfix-Branch auf master gepusht (Commit folgt unten). Bugfix für Hotkey-Hook bei Makro-Tastaturen, die Modifier vor der Haupttaste loslassen — Diagnose durch tray.log eindeutig, Fix umgesetzt, 7 neue Regressionstests grün. **Live-Validierung mit Makrotastatur durch User steht aus** — User hat session-ende gerufen, bevor er den finalen Test durchführen konnte. Tray-Exe ist neu gebaut (`build/dist/Speech2Text-Hotkey.exe`, 27,35 MB) und muss bei der nächsten Session ins installierte Bundle kopiert + live getestet werden. Wenn Live-Test grün → v1.3.1-Tag + GitHub-Release-Update.
+**Phase:** v1.3.1 stable + live-validiert. Release auf GitHub online: <https://github.com/OCICARPETS/Speech2Text/releases/tag/v1.3.1>. Makro-Tastatur-Bug behoben (Modifier-Release-Order), Hotfix-Bundle auf User-Workstation installiert, alle drei Testszenarien (Ctrl+Win+F1 / Ctrl+Shift+F1 / Single-Key Q) grün. master = `14fb921`, Tag `v1.3.1` gepusht, working tree clean.
+
+**Neuer Scope für v1.4 — UX-Backlog (User-Beobachtungen 2026-06-03):**
+
+1. **Mode-Switch-Toast schneller / queue-fähig.** Beim mehrfachen Drücken des Cycle-Hotkeys hintereinander bleibt der Toast zu lange stehen, neue Switches überholen die Anzeige nicht. Ursache vermutlich: `pystray.Icon.notify()` triggert eine Windows-Toast-Notification mit System-Anzeigedauer (~5 s, nicht von uns steuerbar). Vermutete Lösung: eigenes leichtes Tk-Popup als Custom-Toast (kurze Dauer, ersetzt sich selbst beim nächsten Switch). Aufwand ~½ Session.
+2. **Settings-GUI optisch modernisieren.** Aktuell Tkinter + ttk-„clam"-Theme + LabelFrame-Gruppen. Drei Wege:
+   - (a) **Modernes ttk-Theme** einbinden (Sun-Valley.tcl oder Azure-tk) — günstig, wirksam, kein Rewrite. Aufwand ~½ Session.
+   - (b) **CustomTkinter** — moderner Look out-of-the-box, aber Migrationsaufwand für alle Widgets. ~1–2 Sessions.
+   - (c) **PySide6** — echter Rewrite. Tage.
+   - **Variante noch offen** — User entscheidet, bevor Scope startet.
+3. **Mode-Umbenennung ad-hoc in Liste übernehmen** (vom User als „sekundär" eingestuft). Aktuell wird die Mode-Auswahl-Liste nach einer Umbenennung in Settings nicht sofort aktualisiert. Vermutete Lösung: `_refresh_mode_list()` nach Save aufrufen, oder Trace auf den Override-State. Aufwand ~1 h.
+
+**Nächster Schritt:** Beim nächsten Session-Start vom User entscheiden lassen:
+- Reihenfolge der drei Punkte (Vorschlag: 3 → 1 → 2, weil 3 trivial, 1 mittel, 2 entscheidungsbedürftig).
+- Welche Variante für Punkt 2 (a/b/c).
 
 **Sessions bisher (2026-04-24):**
+
+*Session 14 (2026-06-03) — v1.3.1 Live-Validierung + Release + UX-Backlog:*
+
+- **Bundle-Update:** 4 hängende Prozesse (2× Hotkey + 2× Daemon, alle aus PyInstaller-Bootloader-Parent/Child-Tree) gekillt, `build/dist/Speech2Text-Hotkey.exe` (SHA256 `B4C05AF8…`) nach `%LocalAppData%\Programs\Speech2Text\` kopiert, Tray neu gestartet. Hash am Ziel verifiziert.
+- **Live-Test (User-Bestätigung „die funktionen klappen jetzt"):** Mit umbelegten Hotkeys `main=^#F1` (Ctrl+Win+F1) und `cycle=^+F1` (Ctrl+Shift+F1) wurden alle drei Szenarien aus Session 13 grün: Push-to-Talk + Auto-Paste, Mode-Cycle, Single-Key Q ohne Hänger.
+- **Release v1.3.1:** `scripts/build-distribution.py` Version-Bump 1.3 → 1.3.1, ZIP gebaut (86,8 MB). Commit `14fb921` (chore: VERSION-Bump + `.meta.json` tenant-Eintrag aus Dashboard), Tag `v1.3.1` auf Release-Commit gepusht, `gh release create v1.3.1` mit Hotfix-Notes online. URL: <https://github.com/OCICARPETS/Speech2Text/releases/tag/v1.3.1>. master ist clean, 0 Commits ahead.
+- **Tag-Position korrigiert:** initial irrtümlich auf den Fix-Commit `3482461` gesetzt (wo VERSION noch 1.3 stand), vor dem Push verschoben auf den Version-Bump-Commit `14fb921` — sauber für Auschecker.
+- **Daemon/Settings-Exes unverändert:** vom 13.05.2026 — nur die Hotkey-Exe enthielt den Makro-Fix, andere Bundles wurden nicht neu gebaut.
+- **UX-Backlog vom User identifiziert** (siehe „Aktueller Stand" oben): (1) Mode-Switch-Toast zu lange, (2) Settings-GUI optisch modernisieren, (3) Mode-Umbenennung nicht ad-hoc in Liste. Aufgenommen für v1.4. Entscheidung Variante/Reihenfolge offen.
 
 *Session 13 (2026-05-18) — Hotkey-Hook-Fix für Makro-Tastaturen:*
 
@@ -350,6 +373,7 @@ Start-Process "$env:LocalAppData\Programs\Speech2Text\Speech2Text-Hotkey.exe"
 - ✅ **Schritt 6 — Hotkey-Layer-Ausbau** (Session 7, 2026-05-09): freie Hotkey-Belegung per Capture-Dialog, Modus-Hotkeys (Push-to-Talk in fixem Modus), Cycle-Hotkey mit Checkbox-Auswahl, Pause/Resume-Mechanismus für Capture, dynamische Hotkey-Bindung in AHK. Bundles + Distribution-ZIP auf v1.1.
 - ✅ **ARM64-Windows-Support + Settings-GUI-Resize** (Session 9, 2026-05-12): `_arch_fix.py`-Pre-Import-Shim für sounddevice-DLL-Auswahl auf ARM64-Host im x64-Prozess, Settings-GUI mit Footer-pack-bottom + Canvas-Scroll + Bildschirm-Capping. Live-validiert auf ARM64-PC (Settings-GUI + Push-to-Talk grün). Commits `78835f4` + `54eace1`, Tag `v1.2` gepusht.
 - ✅ **v1.3 Publish-Readiness** (Sessions 10–12, 2026-05-12 bis 2026-05-18): AHK komplett abgelöst durch Python (`keyboard_hook.py` Win32 Low-Level-Hook + `tray_app.py` pystray-Tray), Daemon-HTTP-Client (`daemon_client.py`), Settings-GUI auf `ttk.Notebook`-Tabs mit Hotkey-Section in eigenem Modul, LIZENZEN.txt, SmartScreen-Hinweis, 4 Hotfixes aus Live-Test. Master auf `da9717f`, Tag `v1.3` + Release auf GitHub mit ZIP-Asset (86,8 MB). Live-validiert.
+- ✅ **v1.3.1 Hotfix Makro-Tastatur** (Sessions 13–14, 2026-05-18 bis 2026-06-03): `keyboard_hook.py` matched KeyUp jetzt über beim KeyDown gemerkte Bindung (unabhängig von aktueller Modifier-Maske), kein Cross-Talk mehr bei gleichem vk. +7 Regressionstests (34 grün gesamt). Tag `v1.3.1` auf master `14fb921`, GitHub-Release mit ZIP (86,8 MB). Live-validiert mit Ctrl+Win+F1 / Ctrl+Shift+F1 / Single-Key Q.
 
 ---
 
