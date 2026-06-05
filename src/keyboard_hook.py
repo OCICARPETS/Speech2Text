@@ -174,6 +174,17 @@ if _IS_WINDOWS:
     _user32.PostThreadMessageW.restype = wintypes.BOOL
     _kernel32.GetCurrentThreadId.restype = wintypes.DWORD
 
+    # Lock-Key-Selbstheilung (CapsLock-Stuck-Fix): GetKeyState liefert den
+    # Toggle-Status (low-bit = an), keybd_event injiziert einen Toggle —
+    # die Events sind LLKHF_INJECTED und werden vom eigenen Hook durchgereicht.
+    _KEYEVENTF_KEYUP = 0x0002
+    _user32.GetKeyState.argtypes = (ctypes.c_int,)
+    _user32.GetKeyState.restype = ctypes.c_short
+    _user32.keybd_event.argtypes = (
+        wintypes.BYTE, wintypes.BYTE, wintypes.DWORD, ctypes.c_void_p,
+    )
+    _user32.keybd_event.restype = None
+
     WM_QUIT = 0x0012
 
     _WPARAM_NAMES = {
@@ -224,6 +235,12 @@ _MODIFIER_VKS = frozenset({
     VK_LCONTROL, VK_RCONTROL, VK_LMENU, VK_RMENU,
     VK_LSHIFT, VK_RSHIFT, VK_LWIN, VK_RWIN,
 })
+
+# Lock-/Toggle-Tasten: wenn modifier-los als Hotkey gebunden, fangen wir sie
+# IMMER ab (egal welcher Modifier real/stale gemeldet wird). Sonst schlüpft
+# z.B. Ctrl+CapsLock durch und toggelt den Lock-State, der sich danach nicht
+# mehr ausschalten lässt (alle normalen Drücke werden ja unterdrückt).
+_LOCK_VKS = frozenset({VK_CAPITAL, VK_NUMLOCK, VK_SCROLL})
 
 
 # --- HotkeyManager ----------------------------------------------------------
@@ -388,7 +405,17 @@ class HotkeyManager:
                           f"{_mods_to_str(mods)})",
                           file=sys.stderr, flush=True)
                 return self._SUPPRESS
-            entry = bindings_snapshot.get((mods, vk))
+            matched_key = (mods, vk)
+            entry = bindings_snapshot.get(matched_key)
+            # Lock-Tasten (CapsLock/NumLock/ScrollLock): wenn modifier-los
+            # gebunden, IMMER abfangen — auch wenn ein (echter ODER nach
+            # RDP-Reconnect stale) Modifier gemeldet wird. Sonst toggelt z.B.
+            # Ctrl+CapsLock den Lock-State, der sich danach nicht mehr
+            # ausschalten lässt. NUR Lock-Tasten — normale Tasten behalten den
+            # Modifier-Mismatch-Pass-Through (sonst frisst der Hook Tastenkombis).
+            if entry is None and vk in _LOCK_VKS and (0, vk) in bindings_snapshot:
+                matched_key = (0, vk)
+                entry = bindings_snapshot[matched_key]
             if entry is None and mods != 0:
                 if _HK_DEBUG:
                     print(f"[HK]   -> press no-match ({_mods_to_str(mods)},"
@@ -404,11 +431,12 @@ class HotkeyManager:
                           file=sys.stderr, flush=True)
                 return self._PASS
             on_press, _on_rel = entry
-            # Bindung merken, damit der KeyUp die passende on_release findet
-            # — auch wenn Modifier vorher released werden (Makro-Tastaturen).
-            self._down[vk] = (mods, vk)
+            # GEMATCHTE Bindung merken (nicht die aktuellen mods), damit der
+            # KeyUp dieselbe on_release findet — auch bei Lock-Key-Match via
+            # (0,vk) und wenn Modifier vorher released werden (Makro-Tastaturen).
+            self._down[vk] = matched_key
             if _HK_DEBUG:
-                print(f"[HK]   -> press matched ({_mods_to_str(mods)},"
+                print(f"[HK]   -> press matched ({_mods_to_str(matched_key[0])},"
                       f"vk=0x{vk:02X}) -> on_press, suppress",
                       file=sys.stderr, flush=True)
             self._dispatch(on_press)
@@ -437,6 +465,23 @@ class HotkeyManager:
 
         # Weder Down noch Up (z.B. unbekannter wParam) — durchreichen.
         return self._PASS
+
+    def _force_lock_off(self, vk: int) -> None:
+        """Schaltet eine Lock-Taste (CapsLock/NumLock/ScrollLock) aus, falls sie
+        aktuell AN ist. Läuft im Hook-Thread (dort ist der GetKeyState-Toggle-
+        Status zuverlässig). Heilt einen hängenden Lock-State, der sonst nicht
+        mehr ausschaltbar wäre (alle physischen Drücke werden ja unterdrückt).
+        Die per keybd_event injizierten Events sind LLKHF_INJECTED → der eigene
+        Hook reicht sie durch, Windows toggelt den Lock-State auf AUS."""
+        if not _IS_WINDOWS:
+            return
+        try:
+            if _user32.GetKeyState(vk) & 0x0001:  # low-bit = Toggle ist AN
+                _user32.keybd_event(vk, 0, 0, 0)                 # KeyDown → Toggle
+                _user32.keybd_event(vk, 0, _KEYEVENTF_KEYUP, 0)  # KeyUp
+        except Exception as e:  # noqa: BLE001
+            print(f"[HotkeyHook] force-lock-off error: {type(e).__name__}: {e}",
+                  file=sys.stderr)
 
     def _low_level_proc(self, nCode: int, wParam: int, lParam: int):
         # nCode < 0 → laut Doku einfach durchreichen, nicht inspizieren
@@ -491,6 +536,11 @@ class HotkeyManager:
             mods = _modifier_state()
             rv = self._handle_event(vk, is_down, is_up, mods, bindings_snapshot)
             if rv == self._SUPPRESS:
+                # Selbstheilung: nach einem unterdrückten Lock-Hotkey-Druck
+                # einen evtl. hängenden Lock-State ausschalten (läuft hier im
+                # Hook-Thread → zuverlässiger GetKeyState-Toggle-Status).
+                if is_down and vk in _LOCK_VKS:
+                    self._force_lock_off(vk)
                 return 1
             # _PASS
         except Exception as e:  # noqa: BLE001

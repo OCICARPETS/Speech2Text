@@ -20,7 +20,12 @@ Auf dem Terminal-Server bricht nach RDP-Reconnect die Diktat-Eingabe: „Aufnahm
 
 **py_compile OK, 69/69 Tests grün.** Daemon-Exe (37,12 MB) gebaut + deployt, Normalbetrieb verifiziert (`audio_age=0.0`, `stream_recovering=off`, kein False-Positive).
 **✅ Live-validiert (RDP-Reconnect-Test durch User, 2026-06-05):** daemon.log belegt `[audio status] input overflow` → `🔁 Audio-Stream reagiert nicht (age=2.1s) — verbinde neu…` → danach „▶ Aufnahme gestartet → 📝 Roh <45 Zeichen> → ✔ eingefügt". User-Bestätigung: „das Diktat klappte wieder" **ohne Neustart**. Toast „Mikrofon verloren…" feuerte (tray.log Z.1161), war aber während der getrennten RDP-Sitzung unsichtbar + Erholung zu schnell → User entschied: Verhalten so belassen (kein Recovery-Bestätigungs-Toast). Schutz bleibt über den `start()`-Guard (sichtbar bei Druck auf totes Mikro).
-**Abgeschlossen** — Commit + Push via /bugfix-done (Spec `02_Audio-Daemon` §9 ergänzt).
+**Abgeschlossen** — Commit `1d43d7c`, gepusht (Spec `02_Audio-Daemon` §9 ergänzt).
+
+**🐞 Aktive Untersuchung 2 — CapsLock bleibt manchmal hängen (bei CapsLock als Diktat-Hotkey):**
+**Root Cause (vom User bestätigt: trat bei Ctrl+CapsLock auf):** Bindung ist `(0, CapsLock)`. Wird CapsLock mit einem (echten oder nach RDP-Reconnect stale) Modifier gedrückt, sucht der Hook `(Ctrl, CapsLock)` → kein Match → `_handle_event` reicht durch (`if entry is None and mods != 0: return _PASS`, `keyboard_hook.py`) → Windows toggelt CapsLock AN. Normale CapsLock-Drücke (mods=0) werden korrekt unterdrückt → kein Ausschalten mehr möglich → hängt bis Programm-Neustart. Asymmetrie (an, aber nicht aus) = Hook lebt + unterdrückt, leakt nur bei Modifier-Druck.
+**Fix (umgesetzt, vom User freigegeben — CapsLock ist bestätigungspflichtiger Bereich):** (1) Lock-Tasten (CapsLock/NumLock/ScrollLock) modifier-los gebunden → IMMER abfangen, egal welcher Modifier (`_LOCK_VKS`, Match via `(0,vk)`, gemerkte Bindung für KeyUp). NUR Lock-Tasten — normale Tasten behalten Modifier-Mismatch-Pass-Through. (2) Selbstheilung: `_force_lock_off(vk)` nach unterdrücktem Lock-Druck (Hook-Thread, `GetKeyState`-Toggle + `keybd_event`-Injection) — hängendes CapsLock klärt sich bei nächster Nutzung selbst (Notausgang Ctrl+CapsLock entfällt durch Fix 1, daher Fix 2 Pflicht).
+**✅ Live-validiert (2026-06-05):** User bestätigt — Ctrl+CapsLock toggelt nicht mehr, Diktat normal. 6 neue Tests (`TestHandleEventLockKey`), 75/75 grün, Tray-Exe (30,41 MB) gebaut + deployt. **Abgeschlossen** — Commit+Push via /bugfix-done (Spec `01_Hotkey-Trigger` §7a ergänzt).
 
 ---
 

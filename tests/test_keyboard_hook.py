@@ -280,5 +280,78 @@ class TestHandleEventMacroKeyboard(unittest.TestCase):
         self.assertEqual(self.calls, ["cycle", "cycle"])
 
 
+class TestHandleEventLockKey(unittest.TestCase):
+    """CapsLock-Stuck-Fix: Lock-Tasten (CapsLock/NumLock/ScrollLock) modifier-
+    los gebunden werden IMMER abgefangen — auch mit echtem oder (nach RDP-
+    Reconnect) stalem Modifier. Sonst schlüpft z.B. Ctrl+CapsLock durch und
+    toggelt den Lock-State, der sich danach nicht mehr ausschalten lässt.
+    NUR Lock-Tasten — normale Tasten behalten den Modifier-Mismatch-Pass-Through.
+    """
+
+    def setUp(self) -> None:
+        self.mgr = kh.HotkeyManager()
+        self.calls: list[str] = []
+        self.mgr._dispatch = lambda cb: cb()  # synchron, kein Worker-Thread
+        self.vk_caps = kh.VK_CAPITAL  # 0x14
+        self.vk_num = kh.VK_NUMLOCK   # 0x90
+        self.vk_f9 = 0x78
+
+    def _press(self, vk: int, mods: int) -> int:
+        return self.mgr._handle_event(vk, True, False, mods,
+                                      dict(self.mgr._bindings))
+
+    def _release(self, vk: int, mods: int) -> int:
+        return self.mgr._handle_event(vk, False, True, mods,
+                                      dict(self.mgr._bindings))
+
+    def test_capslock_with_stray_ctrl_is_suppressed_not_passed(self) -> None:
+        self.mgr.bind("CapsLock",
+                      on_press=lambda: self.calls.append("press"),
+                      on_release=lambda: self.calls.append("release"))
+        rv = self._press(self.vk_caps, kh.MOD_CTRL)  # Ctrl haengt (stray)
+        self.assertEqual(rv, kh.HotkeyManager._SUPPRESS,
+                         "CapsLock muss auch mit Modifier abgefangen werden")
+        self.assertEqual(self.calls, ["press"])
+        # Gemerkte Bindung ist die modifier-lose (0, vk) — wichtig fuer KeyUp.
+        self.assertEqual(self.mgr._down.get(self.vk_caps), (0, self.vk_caps))
+
+    def test_capslock_release_finds_binding_despite_modifier(self) -> None:
+        self.mgr.bind("CapsLock",
+                      on_press=lambda: self.calls.append("press"),
+                      on_release=lambda: self.calls.append("release"))
+        self._press(self.vk_caps, kh.MOD_CTRL)
+        rv = self._release(self.vk_caps, kh.MOD_CTRL)  # Up noch mit Ctrl
+        self.assertEqual(rv, kh.HotkeyManager._SUPPRESS)
+        self.assertEqual(self.calls, ["press", "release"])
+        self.assertEqual(self.mgr._down, {})
+
+    def test_capslock_normal_press_still_works(self) -> None:
+        self.mgr.bind("CapsLock", on_press=lambda: self.calls.append("press"))
+        rv = self._press(self.vk_caps, 0)
+        self.assertEqual(rv, kh.HotkeyManager._SUPPRESS)
+        self.assertEqual(self.calls, ["press"])
+
+    def test_unbound_capslock_passes_through(self) -> None:
+        # CapsLock NICHT gebunden → normal durchreichen (kein Suppress).
+        self.assertEqual(self._press(self.vk_caps, kh.MOD_CTRL),
+                         kh.HotkeyManager._PASS)
+        self.assertEqual(self._press(self.vk_caps, 0),
+                         kh.HotkeyManager._PASS)
+
+    def test_numlock_also_covered(self) -> None:
+        self.mgr.bind("NumLock", on_press=lambda: self.calls.append("num"))
+        rv = self._press(self.vk_num, kh.MOD_SHIFT)
+        self.assertEqual(rv, kh.HotkeyManager._SUPPRESS)
+        self.assertEqual(self.calls, ["num"])
+
+    def test_non_lock_key_keeps_modifier_passthrough(self) -> None:
+        # F9 modifier-los gebunden; Ctrl+F9 trifft NICHT → muss durchgereicht
+        # werden. Der Lock-Sonderfall gilt ausschliesslich fuer Lock-Tasten.
+        self.mgr.bind("F9", on_press=lambda: self.calls.append("f9"))
+        rv = self._press(self.vk_f9, kh.MOD_CTRL)
+        self.assertEqual(rv, kh.HotkeyManager._PASS)
+        self.assertEqual(self.calls, [])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
