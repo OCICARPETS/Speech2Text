@@ -1,6 +1,6 @@
 # SPEZIFIKATION: Einstellungsmenü
 
-*Status: 🔜 Geplant · Priorität: 2 · Erstellt: 2026-04-24*
+*Status: ✅ Live (seit v1.2, laufend erweitert — Tabs/Theme v1.3–1.4) · Priorität: 2 · Erstellt: 2026-04-24 · Update: 2026-06-05*
 
 ---
 
@@ -106,6 +106,7 @@ Das Menü ist **keine Konsole und keine Webapp** — ein kleines natives Windows
 
 ## 8. Offene Punkte und Entscheidungen
 
+- [x] **Ad-hoc Mode-Umbenennung in der Dropdown-Liste** (v1.4, 2026-06-05) — beim Umbenennen eines Modus (Anzeigename/`ui_name`-Override) aktualisiert sich das Modus-Dropdown nicht mehr erst nach GUI-Neustart, sondern bei **Anwenden/Speichern** (User-Wahl; Live-Trace bewusst verworfen wegen Flackern/Selektionssprung). Neu in `src/settings.py`: `_refresh_mode_list()` baut `mode_labels` in `mode_keys`-Reihenfolge neu (Zip in `_selected_mode_key` bleibt gültig) und setzt die Selektion über die `mode_id` unter `_suppress_mode_trace`-Guard; Aufruf am Ende von `_save_and_reload`. **Gotcha (adversarial gefunden):** `HotkeySection` (`settings_hotkey_section.py`) hält eine EIGENE `cfg`-Referenz, die `refresh_overview()` liest — nach `self.cfg = new_cfg` muss daher auch `self._hotkeys.cfg = new_cfg` gesetzt werden, sonst zeigt die Hotkey-Übersicht für Per-Modus-Hotkeys veraltete Modusnamen.
 - [ ] **GUI-Framework endgültig tkinter?** Alternative: `CustomTkinter` (modernes Look&Feel, extra Dep ~5 MB). Für MVP tkinter — Look second.
 - [ ] **API-Key validieren bei Speichern?** Test-Call an `client.models.list()` → zeigt sofort, ob Key gültig ist. Erhöht UX, braucht aber Internet beim Speichern.
 - [x] **Audio-Device: Default dynamisch** (2026-04-24) — Windows-Standardgerät folgt bei Headset-Wechsel automatisch. Manuelle Wahl per Dropdown bleibt möglich.

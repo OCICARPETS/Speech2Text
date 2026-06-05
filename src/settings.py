@@ -69,6 +69,10 @@ class SettingsWindow:
         # State für Mode-Editor (working copy aktueller Session)
         self._mode_edits: dict[str, dict] = {}
         self._current_mode_id = self.cfg.get("mode", cfg_mod.DEFAULT_MODE)
+        # Modus-Combobox-Referenz + Guard gegen Re-Entrance beim
+        # programmatischen mode_var.set() in _refresh_mode_list().
+        self._mode_combo: ttk.Combobox | None = None
+        self._suppress_mode_trace = False
 
         # Dirty-Tracking — Indikator in Statusleiste
         self._dirty = False
@@ -302,10 +306,11 @@ class SettingsWindow:
                             for k in self.mode_keys]
         cur_label = cfg_mod.get_mode_ui_name(self._current_mode_id, self.cfg)
         self.mode_var = tk.StringVar(value=cur_label)
-        ttk.Combobox(parent, textvariable=self.mode_var,
-                     values=self.mode_labels, state="readonly").grid(
-            row=row, column=1, sticky="ew", pady=4,
+        self._mode_combo = ttk.Combobox(
+            parent, textvariable=self.mode_var,
+            values=self.mode_labels, state="readonly",
         )
+        self._mode_combo.grid(row=row, column=1, sticky="ew", pady=4)
         row += 1
 
         self.mode_desc_var = tk.StringVar()
@@ -475,12 +480,35 @@ class SettingsWindow:
         self._mark_dirty()
 
     def _on_mode_change(self) -> None:
+        # Guard: das programmatische mode_var.set() in _refresh_mode_list() soll
+        # keinen Modus-Wechsel auslösen. (Primärschutz bleibt die new_id-Prüfung
+        # darunter — der Guard ist Defense-in-Depth.)
+        if self._suppress_mode_trace:
+            return
         new_id = self._selected_mode_key()
         if new_id == self._current_mode_id:
             return
         self._save_current_mode_edits()
         self._current_mode_id = new_id
         self._load_mode_into_editor(new_id)
+
+    def _refresh_mode_list(self) -> None:
+        """Modus-Dropdown auf die persistierten Anzeigenamen aktualisieren.
+        Wird nach Anwenden/Speichern aufgerufen (self.cfg ist dann aktuell).
+        Labels werden in mode_keys-Reihenfolge neu gebaut, damit der Zip in
+        _selected_mode_key gültig bleibt; die Selektion folgt der mode_id."""
+        if self._mode_combo is None:
+            return
+        self.mode_labels = [
+            cfg_mod.get_mode_ui_name(k, self.cfg) for k in self.mode_keys
+        ]
+        cur_label = cfg_mod.get_mode_ui_name(self._current_mode_id, self.cfg)
+        self._suppress_mode_trace = True
+        try:
+            self._mode_combo.config(values=self.mode_labels)
+            self.mode_var.set(cur_label)
+        finally:
+            self._suppress_mode_trace = False
 
     def _selected_mode_key(self) -> str:
         label = self.mode_var.get()
@@ -581,6 +609,13 @@ class SettingsWindow:
             return False
 
         self.cfg = new_cfg
+        # Modus-Dropdown + Hotkey-Übersicht auf die neu persistierten
+        # Anzeigenamen aktualisieren (ad-hoc nach Anwenden/Speichern).
+        # HotkeySection hält eine EIGENE cfg-Referenz → mit-aktualisieren,
+        # sonst zeigt refresh_overview() veraltete Modusnamen.
+        self._hotkeys.cfg = new_cfg
+        self._refresh_mode_list()
+        self._hotkeys.refresh_overview()
         reload_status = trigger_reload()
         self._clear_dirty(f"Gespeichert. Reload: {reload_status}")
         return True
