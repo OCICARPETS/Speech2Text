@@ -1,6 +1,6 @@
 # SPEZIFIKATION: Audio-Daemon (Python HTTP-Server + sounddevice)
 
-*Status: ✅ produktiv · Priorität: 1 · Erstellt: 2026-04-24 · Erweitert: 2026-04-24 (Hidden-Modus, /shutdown, /health mit Fehler-Feldern)*
+*Status: ✅ produktiv · Priorität: 1 · Erstellt: 2026-04-24 · Erweitert: 2026-04-24 (Hidden-Modus, /shutdown, /health mit Fehler-Feldern) · 2026-06-05 (Stream-Health-Watchdog gegen RDP-Reconnect — §9)*
 
 ---
 
@@ -126,6 +126,7 @@ Grund für „ignorieren" statt „Fehler": Bei Taste runter+hoch+runter+hoch in
 - **Ports unter 1024 auf Windows:** Keine Admin-Rechte für `< 1024`. **17321** gewählt (unregistriert, unwahrscheinlich kollidiert).
 - **`pyautogui` beim Import:** Macht DISPLAY-Checks. Lazy-Import im Worker-Thread verhindert Probleme, falls Daemon headless gestartet wird. ✅ Umgesetzt.
 - **`server.shutdown()` beendet Python NICHT sauber** (entdeckt während Variante B): sounddevice/PortAudio und openai-SDK hinterlassen Non-Daemon-Threads (PortAudio-Worker, HTTP-Keep-Alive-Pool). Diese halten den Prozess am Leben, `pythonw.exe` bleibt als Zombie im Task-Manager, obwohl AHK schon beendet ist. **Fix:** Im `/shutdown`-Handler `os._exit(0)` in einem Delay-Thread (150 ms Grace-Time für Response-Bytes). Umgeht Python-Cleanup und killt alle Threads hart — unkritisch, weil wir nichts persistieren müssen.
+- **Persistenter Prebuffer-Stream stirbt bei Geräte-Störung (RDP-Reconnect):** Auf Terminal-Servern ist das Mikro session-redirected; beim RDP-Disconnect verschwindet es, PortAudio meldet `[audio status] input overflow` und ruft `_on_audio` nicht mehr auf → der Daemon nimmt weiter „auf", bekommt aber leere `_chunks` („Keine Audiodaten"), bis man das Programm komplett neu startet (Daemon-Restart allein heilt nicht zuverlässig). **Fix (2026-06-05):** Stream-Health-Watchdog in `recorder.py` — `_last_audio_ts` (Lebenszeichen je Callback) + Thread `_stream_watchdog_loop`/`_maybe_recover_stream` öffnet den Stream bei Stillstand (> `STREAM_STALE_S=2 s` ohne Callback) automatisch neu, mit Retry bis wieder Frames kommen. `start()`-Guard weist Aufnahmen bei totem Stream **sichtbar** ab („Mikrofon wird neu verbunden — gleich nochmal") statt leer aufzunehmen. Pure-Logik `_should_reopen_stream()` (Tests `tests/test_recorder_stream_watchdog.py`), neue `/health`-Felder `audio_age`/`stream_recovering`. Live per RDP-Reconnect validiert.
 
 ## 9a. Hidden-Modus + File-Log (Scope-Erweiterung 2026-04-24)
 

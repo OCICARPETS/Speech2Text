@@ -7,6 +7,23 @@
 
 ## Aktueller Stand
 
+**🐞 Aktive Untersuchung (Session 16, Forts.) — RDP-Disconnect-Audio-Bug:**
+Auf dem Terminal-Server bricht nach RDP-Reconnect die Diktat-Eingabe: „Aufnahme zu kurz / kennt die Aufnahme nicht mehr". **Root Cause (per daemon.log bestätigt):** Der persistente Prebuffer-`sd.InputStream` (`recorder.py`, `_open_persistent_stream`) stirbt nach einer Audio-Geräte-Störung. Log zeigt `[audio status] input overflow` direkt vor Serien von „Keine Audiodaten aufgenommen" — bei REALEN Aufnahme-Fenstern (▶ gestartet + Post-Roll laufen, also `/start` **und** `/stop` kamen sauber an), aber `_chunks` bleibt leer. Der Daemon erkennt/repariert den toten Stream NICHT (`_on_audio` wird nicht mehr aufgerufen, kein Reopen). **Hook (H2) verworfen** — Tasten kommen korrekt durch. Auf dem Terminal-Server entfernt der RDP-Disconnect das session-redirected Mikro → Stream tot.
+**Fix umgesetzt (Self-Healing-Watchdog, User-Wahl):** `recorder.py` —
+- `_last_audio_ts` (Lebenszeichen, in `_on_audio` gesetzt) + `STREAM_STALE_S=2.0`, `STREAM_WATCHDOG_INTERVAL_S=1.0`.
+- Pure-testbare `_stream_is_stale()` + `_should_reopen_stream()` (6 Unit-Tests, `tests/test_recorder_stream_watchdog.py`).
+- Watchdog-Thread `_stream_watchdog_loop` → `_maybe_recover_stream`: erkennt toten Stream (kein Callback >2 s) und macht close+open mit Retry (auch wenn Open beim Start fehlschlug → retry bis Gerät da). Throttle via `_stream_recovering`.
+- `_open_persistent_stream(verbose)` setzt Grace-`_last_audio_ts`; `_close_persistent_stream(verbose)`.
+- **start()-Guard:** drückt der User bei totem Stream → Toast „Mikrofon wird neu verbunden — bitte gleich nochmal drücken", KEINE Leer-Aufnahme (User-Wunsch: nicht ins Leere sprechen).
+- Watchdog-Toast bei Erstausfall „Mikrofon verloren — verbinde neu…".
+- `/health`: neue Felder `audio_age`, `stream_recovering` (für Live-Validierung).
+
+**py_compile OK, 69/69 Tests grün.** Daemon-Exe (37,12 MB) gebaut + deployt, Normalbetrieb verifiziert (`audio_age=0.0`, `stream_recovering=off`, kein False-Positive).
+**✅ Live-validiert (RDP-Reconnect-Test durch User, 2026-06-05):** daemon.log belegt `[audio status] input overflow` → `🔁 Audio-Stream reagiert nicht (age=2.1s) — verbinde neu…` → danach „▶ Aufnahme gestartet → 📝 Roh <45 Zeichen> → ✔ eingefügt". User-Bestätigung: „das Diktat klappte wieder" **ohne Neustart**. Toast „Mikrofon verloren…" feuerte (tray.log Z.1161), war aber während der getrennten RDP-Sitzung unsichtbar + Erholung zu schnell → User entschied: Verhalten so belassen (kein Recovery-Bestätigungs-Toast). Schutz bleibt über den `start()`-Guard (sichtbar bei Druck auf totes Mikro).
+**Abgeschlossen** — Commit + Push via /bugfix-done (Spec `02_Audio-Daemon` §9 ergänzt).
+
+---
+
 **Phase:** v1.4-Punkt-2 (Settings-GUI-Modernisierung) **komplett live + committet + gepusht** (`628da53`, master 0 ahead). Sun-Valley ttk-Theme (sv-ttk-Package v2.6.1), Dark/Light-Toggle in Tab „Allgemein", Capture-Dialog theme-aware, Typografie-Hierarchie (Header 12 pt Bold, Hint 8 pt gedimmt), Layout-Refactor mit größerem Spacing (24 px zwischen LabelFrames, 18 px Innen-Padding), Hotkeys-Tab in 3 LabelFrame-Gruppen, Default-Fenstergröße auf 720×860. Settings-Exe neu gebaut + ins installierte Bundle kopiert.
 
 **Aktueller Scope (Session 16):** v1.4 **Punkt 1** (Mode-Switch-Toast) → danach **Punkt 3** (Mode-Umbenennung). Plan-Datei: `C:\Users\df\.claude\plans\silly-hatching-stardust.md`.

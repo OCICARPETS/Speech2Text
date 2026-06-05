@@ -70,6 +70,43 @@ POSTROLL_MS_MAX = 500
 # Puffer im RAM und versehentliche OpenAI-Mehrkosten).
 MAX_RECORD_S = 600
 
+# --- Stream-Health-Watchdog (RDP-Reconnect-Fix) ----------------------------
+# Der persistente Prebuffer-Stream kann sterben, wenn das Audio-Gerät
+# verschwindet — auf Terminal-Servern passiert das bei RDP-Disconnect, weil das
+# Mikrofon session-redirected ist. PortAudio meldet dann '[audio status] input
+# overflow' und ruft `_on_audio` nicht mehr auf. Ohne Gegenmaßnahme nimmt der
+# Daemon weiter "auf", bekommt aber nur leere Chunks → "Keine Audiodaten".
+# Der Watchdog erkennt den Stillstand (kein Callback seit STREAM_STALE_S) und
+# öffnet den Stream automatisch neu (mit Retry, bis wieder Frames kommen).
+STREAM_STALE_S = 2.0              # kein _on_audio-Callback so lange ⇒ Stream tot
+STREAM_WATCHDOG_INTERVAL_S = 1.0  # Prüf-Intervall des Watchdog-Threads
+
+
+def _stream_is_stale(now: float, last_audio_ts: float, stale_s: float) -> bool:
+    """True, wenn seit dem letzten Audio-Callback länger als stale_s vergangen
+    ist (Stream liefert keine Frames mehr). Pure Funktion → ohne Gerät testbar."""
+    return (now - last_audio_ts) > stale_s
+
+
+def _should_reopen_stream(now: float, last_audio_ts: float, stale_s: float,
+                          want_prebuffer: bool, stream_always_on: bool,
+                          state_is_idle: bool) -> bool:
+    """Watchdog-Entscheidung: persistenten Stream (neu) öffnen? Pure Funktion
+    → ohne PortAudio testbar.
+
+    Reopen nur bei IDLE (nie mitten in Recording/Processing) und nur wenn
+    Prebuffer gewünscht ist. Dann: entweder ist kein Stream offen (z.B.
+    Open-Fail beim Start) ODER der offene Stream ist stale (tot).
+    """
+    if not state_is_idle:
+        return False
+    if not want_prebuffer:
+        return False
+    if not stream_always_on:
+        return True
+    return _stream_is_stale(now, last_audio_ts, stale_s)
+
+
 LOG_MAX_BYTES = 1_000_000  # bei >1 MB wird daemon.log zu daemon.1.log rotiert
 
 
@@ -194,6 +231,15 @@ class Recorder:
         # Quelle für Lifecycle-Vergleiche in reload_config — wir vergleichen
         # gegen den TATSÄCHLICHEN Stream-Status, nicht gegen alte config-Werte.
         self._current_device: int | None = None
+        # Stream-Health-Watchdog (RDP-Reconnect-Fix):
+        #   _last_audio_ts:     Zeit des letzten _on_audio-Callbacks (Lebens-
+        #                       zeichen). Wird in _open_persistent_stream auf
+        #                       now gesetzt → Grace-Period für den 1. Callback.
+        #   _stream_recovering: True während laufender Reopen-Versuche
+        #                       (Throttle für Log/Toast, kein Spam pro Tick).
+        self._last_audio_ts: float = 0.0
+        self._stream_recovering: bool = False
+        self._watchdog_thread: threading.Thread | None = None
         # Aktiver Post-Roll-Timer (None wenn keiner läuft). Cancel-Handle
         # für Doppeltap-Reentrancy in start().
         self._postroll_timer: threading.Timer | None = None
@@ -223,6 +269,13 @@ class Recorder:
         # Fehler nicht-fatal — Recorder bleibt nutzbar im On-Demand-Modus.
         if bool(self.config.get("prebuffer_enabled", True)):
             self._open_persistent_stream()
+        # Watchdog IMMER starten — greift, sobald Prebuffer aktiv ist und der
+        # Stream stirbt (oder beim Start gar nicht öffnen konnte, weil das
+        # Gerät noch nicht da war). Self-Healing gegen RDP-Reconnect.
+        self._watchdog_thread = threading.Thread(
+            target=self._stream_watchdog_loop, daemon=True, name="StreamWatchdog",
+        )
+        self._watchdog_thread.start()
 
     # --- Stream-Lifecycle (Persistent-Modus) ------------------------------
     # Im Prebuffer-Modus läuft der Mikrofon-Stream dauerhaft. Open/Close
@@ -230,7 +283,7 @@ class Recorder:
     # RECORDING/PROCESSING. Für On-Demand-Betrieb (Prebuffer aus) gilt der
     # alte Pfad in start()/stop().
 
-    def _open_persistent_stream(self) -> None:
+    def _open_persistent_stream(self, verbose: bool = True) -> None:
         device = self.config.get("audio_device")
         try:
             self._stream = sd.InputStream(
@@ -244,28 +297,76 @@ class Recorder:
             self._stream_always_on = True
             self._current_device = device
             self._ringbuffer.clear()
-            print(f"🎙  Prebuffer-Stream geöffnet (device={device}, "
-                  f"ringbuffer={RINGBUFFER_S*1000:.0f} ms)")
+            # Grace-Period: frischen Stream nicht sofort als stale werten —
+            # der Watchdog gibt ihm bis STREAM_STALE_S Zeit für den 1. Callback.
+            self._last_audio_ts = time.time()
+            if verbose:
+                print(f"🎙  Prebuffer-Stream geöffnet (device={device}, "
+                      f"ringbuffer={RINGBUFFER_S*1000:.0f} ms)")
         except Exception as e:  # noqa: BLE001
             self._stream = None
             self._stream_always_on = False
             self._current_device = None
             err = f"Persistent-Stream konnte nicht geöffnet werden: {type(e).__name__}: {e}"
-            print(f"❌  {err}", file=sys.stderr)
-            self._set_error(err)
+            if verbose:
+                # Im Watchdog-Retry NICHT pro Versuch toasten/spammen — dort
+                # wird verbose=False übergeben (Throttle via _stream_recovering).
+                print(f"❌  {err}", file=sys.stderr)
+                self._set_error(err)
 
-    def _close_persistent_stream(self) -> None:
+    def _close_persistent_stream(self, verbose: bool = True) -> None:
         if self._stream is not None:
             try:
                 self._stream.stop()
                 self._stream.close()
             except Exception as e:  # noqa: BLE001
-                print(f"⚠  Stream-Close-Fehler: {e}", file=sys.stderr)
+                if verbose:
+                    print(f"⚠  Stream-Close-Fehler: {e}", file=sys.stderr)
             self._stream = None
         self._stream_always_on = False
         self._current_device = None
         self._ringbuffer.clear()
-        print("🎙  Prebuffer-Stream geschlossen")
+        if verbose:
+            print("🎙  Prebuffer-Stream geschlossen")
+
+    # --- Stream-Watchdog (Self-Healing gegen RDP-Reconnect) ---------------
+
+    def _stream_watchdog_loop(self) -> None:
+        """Hintergrund-Thread: prüft periodisch, ob der persistente Stream noch
+        Frames liefert, und öffnet ihn bei Stillstand neu."""
+        while True:
+            time.sleep(STREAM_WATCHDOG_INTERVAL_S)
+            try:
+                self._maybe_recover_stream()
+            except Exception as e:  # noqa: BLE001
+                print(f"⚠  Stream-Watchdog-Fehler: {type(e).__name__}: {e}",
+                      file=sys.stderr)
+
+    def _maybe_recover_stream(self) -> None:
+        now = time.time()
+        with self._lock:
+            want = bool(self.config.get("prebuffer_enabled", True))
+            idle = self.state is State.IDLE
+            # Recovering-Flag zurücksetzen, sobald wieder ein gesunder Stream da
+            # ist (offen + nicht stale) → ein späterer Ausfall toastet erneut.
+            if (self._stream_recovering and self._stream_always_on
+                    and not _stream_is_stale(now, self._last_audio_ts,
+                                             STREAM_STALE_S)):
+                self._stream_recovering = False
+            if not _should_reopen_stream(now, self._last_audio_ts, STREAM_STALE_S,
+                                         want, self._stream_always_on, idle):
+                return
+            first = not self._stream_recovering
+            self._stream_recovering = True
+            if first:
+                age = (now - self._last_audio_ts) if self._stream_always_on else -1.0
+                print(f"🔁  Audio-Stream reagiert nicht (age={age:.1f}s) — "
+                      f"verbinde neu…", file=sys.stderr)
+                # Einmal-Toast für den User: nicht ins Leere sprechen.
+                self._set_error(
+                    "Mikrofon verloren — verbinde neu, gleich wieder bereit…")
+            self._close_persistent_stream(verbose=False)
+            self._open_persistent_stream(verbose=False)
 
     def reload_config(self) -> str:
         """Liest Config neu, tauscht OpenAI-Client wenn API-Key sich ändert,
@@ -390,6 +491,19 @@ class Recorder:
                 print(f"⚠  {msg}")
                 self._set_error(msg)
                 return
+            # RDP-Reconnect-Schutz: ist der Prebuffer-Stream tot (liefert keine
+            # Frames mehr), NICHT ins Leere aufnehmen — der User spräche sonst
+            # umsonst und müsste alles wiederholen. Stattdessen sofort melden;
+            # der Watchdog stellt den Stream im Hintergrund wieder her.
+            if (self._stream_always_on
+                    and _stream_is_stale(time.time(), self._last_audio_ts,
+                                         STREAM_STALE_S)):
+                msg = "Mikrofon wird neu verbunden — bitte gleich nochmal drücken."
+                print(f"⚠  {msg}")
+                self._set_error(msg)
+                # Verhindert einen doppelten „verloren"-Toast aus dem Watchdog.
+                self._stream_recovering = True
+                return
             # Mode-Override für diese Session merken (None = aktiver Modus).
             # Liegt im Lock, damit _process keinen halben Wert sieht.
             self._session_mode = mode_override if mode_override in cfg_mod.MODES else None
@@ -429,6 +543,9 @@ class Recorder:
                 print("▶  Aufnahme gestartet")
 
     def _on_audio(self, indata, frames, time_info, status):  # noqa: ARG002
+        # Lebenszeichen für den Stream-Watchdog: jeder Callback = Stream lebt.
+        # (Läuft im PortAudio-Thread; einfacher float-Write, lock-frei ok.)
+        self._last_audio_ts = time.time()
         if status:
             # status meldet Buffer-Overflows o.ä. — nur loggen, nicht abbrechen
             print(f"[audio status] {status}", file=sys.stderr)
@@ -750,6 +867,7 @@ class Handler(BaseHTTPRequestHandler):
             active = r._active_mode or r.config.get("mode", cfg_mod.DEFAULT_MODE)
             active_ui = cfg_mod.get_mode_ui_name(active, r.config)
             cycle_size = len(r.config.get("cycle_loop") or [])
+            audio_age = (time.time() - r._last_audio_ts) if r._stream_always_on else -1.0
             body = (
                 f"state={r.state.value}\n"
                 f"last_error={r.last_error}\n"
@@ -761,7 +879,9 @@ class Handler(BaseHTTPRequestHandler):
                 f"cycle_loop_size={cycle_size}\n"
                 f"hotkeys_revision={r._hotkeys_revision}\n"
                 f"hotkeys_paused={'on' if r._hotkeys_paused else 'off'}\n"
-                f"prebuffer={'on' if r._stream_always_on else 'off'}"
+                f"prebuffer={'on' if r._stream_always_on else 'off'}\n"
+                f"audio_age={audio_age:.1f}\n"
+                f"stream_recovering={'on' if r._stream_recovering else 'off'}"
             )
             self._ok(body)
         elif self.path == "/hotkeys":
