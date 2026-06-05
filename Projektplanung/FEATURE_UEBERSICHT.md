@@ -79,6 +79,8 @@ Für den **Tagesstand** und laufende Arbeit siehe `tasks/current-task.md`.
 - [x] **Eigenes Tray-Icon** — Electric-Blue-Kreis mit „S2T" (`assets/speech2text.ico`), generiert via `create-icon.ps1`
 - [x] **Hidden-Daemon + File-Log** — `pythonw.exe` + stdout/stderr → `%APPDATA%\Speech2Text\daemon.log`
 - [x] **`/shutdown`-Endpoint + Hard-Exit** — `os._exit(0)` wegen sounddevice/openai Non-Daemon-Threads
+- [x] **Mode-Switch-Toast (Custom-Popup)** — eigenes Tk-Toast unten rechts statt pystray-System-Toast: 1,5 s, Coalesce/Timer-Reset, theme-aware, alle Tray-Meldungen darüber (`src/toast.py`, v1.4 2026-06-05). Details `01_Hotkey-Trigger/SPEZIFIKATION.md` §7c.
+- [x] **Ad-hoc Mode-Umbenennung in der Liste** — Modus-Dropdown aktualisiert sich bei Anwenden/Speichern (`_refresh_mode_list` in `src/settings.py`, v1.4 2026-06-05). Details `05_Einstellungsmenue/SPEZIFIKATION.md` §8.
 - [ ] **Kontext-bewusste Optimierung** — pro Fenstertitel anderer Prompt-Hint (Prio 3)
 - [ ] **Diktat-Historie** — letzte 20 Diktate lokal (opt-in, verschlüsselt) (Prio 3)
 - [ ] **Transfer in AussendienstAPP** — Sprachnotiz-Feature am iPhone-Browser (eigenes Projekt, Prio 3)

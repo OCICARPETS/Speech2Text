@@ -1,22 +1,36 @@
 # Current Task — Speech2Text
 
-*Letzte Aktualisierung: 2026-06-03 (Session 15 — v1.4 Punkt 2 Variante (a): Sun-Valley-Theme + Layout-Refactor live)*
+*Letzte Aktualisierung: 2026-06-05 (Session 16 — v1.4 Punkt 1 (Mode-Switch-Toast) + Punkt 3 (Mode-Umbenennung) live + committet)*
 *Zu lesen am Anfang jeder Session — siehe `CLAUDE.md` Arbeitsregel 1.*
 
 ---
 
 ## Aktueller Stand
 
-**Phase:** v1.4-Punkt-2 (Settings-GUI-Modernisierung) **komplett live** auf User-Workstation. Sun-Valley ttk-Theme (sv-ttk-Package v2.6.1) eingebunden, Dark/Light-Toggle in Tab „Allgemein", Capture-Dialog theme-aware, Typografie-Hierarchie (Header 12 pt Bold, Hint 8 pt gedimmt), Layout-Refactor mit größerem Spacing (24 px zwischen LabelFrames, 18 px Innen-Padding), Hotkeys-Tab in 3 LabelFrame-Gruppen, Default-Fenstergröße auf 720×860. Settings-Exe neu gebaut + ins installierte Bundle kopiert. **Noch nicht committet.** Plan-Datei: `C:\Users\df\.claude\plans\sun-valley-ttk-theme-in-noble-hopper.md`.
+**Phase:** v1.4-Punkt-2 (Settings-GUI-Modernisierung) **komplett live + committet + gepusht** (`628da53`, master 0 ahead). Sun-Valley ttk-Theme (sv-ttk-Package v2.6.1), Dark/Light-Toggle in Tab „Allgemein", Capture-Dialog theme-aware, Typografie-Hierarchie (Header 12 pt Bold, Hint 8 pt gedimmt), Layout-Refactor mit größerem Spacing (24 px zwischen LabelFrames, 18 px Innen-Padding), Hotkeys-Tab in 3 LabelFrame-Gruppen, Default-Fenstergröße auf 720×860. Settings-Exe neu gebaut + ins installierte Bundle kopiert.
 
-**Verbleibender v1.4-Backlog (für nächste Sessions):**
+**Aktueller Scope (Session 16):** v1.4 **Punkt 1** (Mode-Switch-Toast) → danach **Punkt 3** (Mode-Umbenennung). Plan-Datei: `C:\Users\df\.claude\plans\silly-hatching-stardust.md`.
 
-1. **Mode-Switch-Toast schneller / queue-fähig** — pystray-Win-Toast hat ~5 s System-Dauer, eigenes Tk-Custom-Popup nötig. Aufwand ~½ Session.
-3. **Mode-Umbenennung ad-hoc in Liste übernehmen** — `_refresh_mode_list()` nach Save oder Trace auf Override-State. Aufwand ~1 h.
+- **Punkt 1 — Mode-Switch-Toast (Ansatz A, Multi-Agent-Judge 8.5/10):** Neues `src/toast.py` mit `ToastController` auf eigenem `ToastUI`-Tk-Thread (eigener Mainloop); pystray.run() bleibt 1:1. Cross-Thread nur via `queue.put_nowait`, Coalesce + Timer-Reset. User-Entscheidungen: **alle** Tray-Meldungen wandern aufs Popup (pystray.notify abgelöst), Mode-Switch **1,5 s** mit Update beim nächsten Modus, Fehler/System **~4 s** mehrzeilig + Log. `build-tray.ps1` muss tkinter bündeln (Tray-Exe hat aktuell keins). Vorab HTML-Mockup zur Optik-Freigabe.
+- **Punkt 3 — Mode-Umbenennung (Refresh erst bei Anwenden/Speichern, User-Wahl):** `settings.py` — Combobox-Referenz merken, neues `_refresh_mode_list()` (liest persistierte `self.cfg`), Aufruf in `_save_and_reload`; **Critic-Fix:** `self._hotkeys.cfg = new_cfg` vor `refresh_overview()`.
 
-(Punkt 2 ist abgeschlossen.)
+**v1.4-Backlog — Status (alle erledigt):**
 
-**Nächster Schritt:** v1.4-Punkt-2 committen + pushen (siehe Session-15-Block unten). v1.4.0-Tag erst nach Punkt 1 + 3 setzen.
+1. ✅ **Mode-Switch-Toast** — Custom-Tk-Popup (`e5ca248`).
+2. ✅ **Settings-GUI-Modernisierung** — Sun-Valley + Layout (`628da53`).
+3. ✅ **Mode-Umbenennung ad-hoc in Liste** — Refresh bei Anwenden/Speichern (`36b05ff`).
+
+→ Alle drei v1.4-UX-Backlog-Punkte abgeschlossen, bereit für v1.4.0-Release.
+
+**Punkt 1 — fertig (Code + Verifikation):** `src/toast.py` (ToastController, eigener ToastUI-Tk-Thread, Coalesce/Timer-Reset, Lazy-tkinter, Theme-Callback, event-basiertes `stop()` ohne Cross-Thread-Tk) + Tray-Edits (`tray_app.py`: Import, `__init__`, `run()`-start/stop, `_cycle_action`→Mode-Toast 1,5 s, `_notify`→Info-Toast ~4 s + Log, `_action_exit`, `_toast_theme`-Helper) + `scripts/build-tray.ps1` (`--collect-all tkinter`) + `tests/test_toast.py` (11 Tests). HTML-Mockup freigegeben. Dev-Smoke vom User bestätigt („sieht gut aus"), **`Tcl_AsyncDelete`-Teardown-Bug gefixt** (event-basiertes stop, Tk-Refs im ToastUI-Thread freigegeben — zweiter Lauf stderr sauber). Bundle-Smoke der gebauten Tray-Exe grün (tkinter geladen, keine `[Toast]`-Fehlerzeile).
+
+**Punkt 3 — fertig (Code):** `src/settings.py` — `self._mode_combo`-Referenz + `_suppress_mode_trace`-Guard, neue `_refresh_mode_list()` (liest persistierte `self.cfg`, Labels in `mode_keys`-Reihenfolge, Selektion folgt mode_id unter Guard), Guard-Check in `_on_mode_change`, in `_save_and_reload` nach `self.cfg = new_cfg`: `self._hotkeys.cfg = new_cfg` + `_refresh_mode_list()` + `_hotkeys.refresh_overview()`. **py_compile OK, 63/63 Tests grün.**
+
+**Deploy + Live-Test (2026-06-05):** Beide Exes ins installierte Bundle kopiert (`Speech2Text-Hotkey.exe` 30,41 MB, `Speech2Text-Settings.exe` 23,09 MB), Tray neu gestartet (`[Tray] Hotkeys gebunden`, keine `[Toast]`-Fehlerzeile). **User-Bestätigung: „Toast und Umbenennen klappen."** Geleakte Onefile-Child-Smoke-Prozesse aufgeräumt.
+
+**Commits (master):** `e5ca248` feat(v1.4) Mode-Switch-Toast (+ Spec §7c), `36b05ff` feat(v1.4) Mode-Umbenennung (+ Spec §8), Doku-Commit (FEATURE_UEBERSICHT + current-task).
+
+**Nächster Schritt:** Push auf origin/master. Danach offen: **v1.4.0-Release** mit User abstimmen (VERSION-Bump + Tag `v1.4.0` + ggf. Distribution-ZIP + `gh release create`). Build-Artefakte für die ZIP: Daemon-Exe ist UNVERÄNDERT (13.05.), nur Hotkey- + Settings-Exe neu.
 
 **Sessions bisher (2026-04-24):**
 
