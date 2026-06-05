@@ -54,6 +54,12 @@ if ($Clean -and (Test-Path ".\build\tray")) {
 # sys._MEIPASS (siehe _icon_path-Helper).
 # --paths .\src damit config, daemon_client, keyboard_hook, _arch_fix gefunden
 # werden (flach unter src/).
+# --collect-all tkinter: Pflicht ab v1.4 Punkt 1. Der Custom-Toast (src/toast.py)
+# importiert tkinter LAZY in seinem ToastUI-Thread. Das Tray-Bundle zog bisher
+# KEIN tkinter (nur der Settings-Prozess) -> ohne expliziten Collect fehlen die
+# tcl/tk-Datendateien im onefile und das Toast-Toplevel crasht zur Laufzeit
+# (Dev-Python kaschiert das, da System-Python tk hat). Verifizieren per
+# Bundle-Smoke der gebauten Exe (Cycle -> Toast, kein TclError in tray.log).
 $PyiArgs = @(
     "-m", "PyInstaller",
     "--onefile",
@@ -66,6 +72,7 @@ $PyiArgs = @(
     "--paths", $SrcDir,
     "--collect-all", "pystray",
     "--collect-all", "PIL",
+    "--collect-all", "tkinter",
     "--noconfirm"
 )
 if (-not $Console) {

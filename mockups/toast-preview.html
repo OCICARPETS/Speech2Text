@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Speech2Text — Toast-Mockup (v1.4 Punkt 1)</title>
+<style>
+  :root {
+    /* Werte spiegeln den geplanten Tk-Toast (toast.py) */
+    --toast-bg-dark:     #2b2b2b;
+    --toast-fg-dark:     #ffffff;
+    --toast-border-dark: #4a4a4a;
+    --toast-sub-dark:    #b9b9c0;
+
+    --toast-bg-light:     #f4f4f4;
+    --toast-fg-light:     #1f1f1f;
+    --toast-border-light: #cfcfcf;
+    --toast-sub-light:    #5b5b5b;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Segoe UI", system-ui, sans-serif;
+    background: #11131a;
+    color: #e7e7ee;
+    min-height: 100vh;
+  }
+
+  .controls {
+    padding: 18px 22px;
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    flex-wrap: wrap;
+    border-bottom: 1px solid #262838;
+    background: #161824;
+  }
+  .controls h1 { font-size: 15px; margin: 0 16px 0 0; font-weight: 600; }
+  .controls button {
+    font-family: inherit;
+    font-size: 13px;
+    padding: 7px 14px;
+    border-radius: 6px;
+    border: 1px solid #3a3d52;
+    background: #1f2233;
+    color: #e7e7ee;
+    cursor: pointer;
+  }
+  .controls button.active { background: #10b981; border-color: #10b981; color: #06281f; font-weight: 600; }
+  .controls .sep { width: 1px; height: 22px; background: #2c2f44; }
+  .controls .hint { font-size: 12px; color: #8a8da3; }
+
+  /* Faux-Desktop, der den Bildschirm simuliert */
+  .desktop {
+    position: relative;
+    margin: 26px auto;
+    width: min(960px, 92vw);
+    height: 560px;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid #2c2f44;
+    box-shadow: 0 18px 50px rgba(0,0,0,.45);
+    transition: background .25s;
+  }
+  .desktop.bg-dark  { background: linear-gradient(135deg, #243447, #16202c); }
+  .desktop.bg-light { background: linear-gradient(135deg, #dfe7f0, #c4d2e2); }
+
+  /* aktives Eingabefenster, um Fokus-Klau-Frage zu illustrieren */
+  .app-window {
+    position: absolute;
+    top: 42px; left: 46px;
+    width: 460px; height: 300px;
+    border-radius: 8px;
+    background: #fbfbfd;
+    border: 1px solid rgba(0,0,0,.18);
+    box-shadow: 0 10px 28px rgba(0,0,0,.30);
+    overflow: hidden;
+  }
+  .app-window .titlebar {
+    height: 30px; background: #ececf0;
+    border-bottom: 1px solid #dadae0;
+    display: flex; align-items: center; padding: 0 12px;
+    font-size: 12px; color: #444;
+  }
+  .app-window .body { padding: 14px; font-size: 13px; color: #222; }
+  .app-window .caret { display:inline-block; width:1px; height:15px; background:#222; vertical-align:-3px; animation: blink 1s step-end infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* Taskleiste unten */
+  .taskbar {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 40px;
+    display: flex; align-items: center; justify-content: flex-end;
+    padding: 0 12px;
+    gap: 12px;
+  }
+  .taskbar.tb-dark  { background: rgba(20,22,32,.92); border-top: 1px solid #2c2f44; }
+  .taskbar.tb-light { background: rgba(243,243,243,.95); border-top: 1px solid #cfcfcf; }
+  .tray-icons { display: flex; gap: 9px; align-items: center; }
+  .tray-icons .ico { width: 16px; height: 16px; border-radius: 4px; opacity: .8; }
+  .tray-icons .ico.s2t { background: #10b981; box-shadow: 0 0 0 2px rgba(16,185,129,.25); opacity: 1; }
+  .tray-icons .ico.a { background: #6b7280; }
+  .tray-icons .ico.b { background: #6b7280; }
+  .clock { font-size: 11px; }
+  .tb-dark  .clock { color: #c9ccda; }
+  .tb-light .clock { color: #444; }
+
+  /* DER TOAST */
+  .toast {
+    position: absolute;
+    right: 14px;           /* TOAST_MARGIN_PX */
+    bottom: 52px;          /* über der ~40px Taskleiste + Margin */
+    min-width: 150px;
+    max-width: 340px;
+    padding: 11px 16px;    /* ipady ~10 / ipadx ~16 */
+    border-radius: 3px;    /* Tk-Fenster ist real rechteckig — nur Mini-Radius */
+    border: 1px solid;
+    font-size: 14px;       /* ~11pt */
+    line-height: 1.35;
+    box-shadow: 0 8px 24px rgba(0,0,0,.40);
+    opacity: .96;          /* attributes -alpha 0.95 */
+    white-space: pre-line;
+    transition: background .25s, color .25s, border-color .25s;
+  }
+  .toast.t-dark  { background: var(--toast-bg-dark);  color: var(--toast-fg-dark);  border-color: var(--toast-border-dark); }
+  .toast.t-light { background: var(--toast-bg-light); color: var(--toast-fg-light); border-color: var(--toast-border-light); }
+  .toast .sub { display:block; font-size: 12px; margin-top: 3px; }
+  .toast.t-dark  .sub { color: var(--toast-sub-dark); }
+  .toast.t-light .sub { color: var(--toast-sub-light); }
+
+  .legend { width: min(960px, 92vw); margin: 0 auto 40px; font-size: 12.5px; color: #8a8da3; line-height: 1.6; }
+  .legend code { background:#1f2233; padding: 1px 6px; border-radius: 4px; color: #cdd0e0; }
+</style>
+</head>
+<body>
+  <div class="controls">
+    <h1>Speech2Text · Toast-Mockup</h1>
+    <span class="hint">Theme:</span>
+    <button id="btnDark" class="active" onclick="setTheme('dark')">Dark</button>
+    <button id="btnLight" onclick="setTheme('light')">Light</button>
+    <span class="sep"></span>
+    <span class="hint">Inhalt:</span>
+    <button id="btnMode" class="active" onclick="setKind('mode')">Mode-Switch (1,5 s)</button>
+    <button id="btnInfo" onclick="setKind('info')">Info / Fehler (~4 s, mehrzeilig)</button>
+  </div>
+
+  <div id="desktop" class="desktop bg-dark">
+    <div class="app-window">
+      <div class="titlebar">📝 E-Mail – Neue Nachricht</div>
+      <div class="body">Sehr geehrte Damen und Herren,<br>vielen Dank für Ihre Anfrage<span class="caret"></span></div>
+    </div>
+
+    <div id="toast" class="toast t-dark">Modus: Clean Dictation</div>
+
+    <div id="taskbar" class="taskbar tb-dark">
+      <div class="tray-icons">
+        <span class="ico a"></span>
+        <span class="ico b"></span>
+        <span class="ico s2t" title="Speech2Text"></span>
+      </div>
+      <span class="clock">14:32</span>
+    </div>
+  </div>
+
+  <div class="legend">
+    <strong>Was hier gezeigt wird</strong> — der geplante Custom-Toast (Tk-Toplevel, <code>overrideredirect</code>, kein Fokus-Klau)
+    erscheint unten rechts über der Taskleiste, nahe dem Speech2Text-Tray-Icon.<br>
+    • <strong>Mode-Switch</strong>: einzeilig, <code>1,5 s</code> — beim schnellen Cyclen wird derselbe Toast aktualisiert (Timer-Reset), kein Stapeln.<br>
+    • <strong>Info / Fehler</strong>: mehrzeilig, <code>~4 s</code> + zusätzlich in <code>tray.log</code> (nie Diktattext).<br>
+    • Farben: dark <code>#2b2b2b/#ffffff</code>, light <code>#f4f4f4/#1f1f1f</code> (an Settings-Theme angelehnt). Hinweis: das echte Tk-Fenster ist <em>rechteckig</em> (kein großer Eckradius in v1).
+  </div>
+
+<script>
+  let theme = 'dark';
+  let kind  = 'mode';
+
+  function render() {
+    const desktop = document.getElementById('desktop');
+    const taskbar = document.getElementById('taskbar');
+    const toast   = document.getElementById('toast');
+
+    desktop.className = 'desktop bg-' + theme;
+    taskbar.className = 'taskbar tb-' + theme;
+    toast.className   = 'toast t-' + theme;
+
+    if (kind === 'mode') {
+      toast.innerHTML = 'Modus: Clean Dictation';
+    } else {
+      toast.innerHTML = 'Daemon nicht erreichbar' +
+        '<span class="sub">Verbindung zu localhost:17321 fehlgeschlagen.\nWird automatisch neu gestartet …</span>';
+    }
+  }
+
+  function setTheme(t) {
+    theme = t;
+    document.getElementById('btnDark').classList.toggle('active', t === 'dark');
+    document.getElementById('btnLight').classList.toggle('active', t === 'light');
+    render();
+  }
+  function setKind(k) {
+    kind = k;
+    document.getElementById('btnMode').classList.toggle('active', k === 'mode');
+    document.getElementById('btnInfo').classList.toggle('active', k === 'info');
+    render();
+  }
+  render();
+</script>
+</body>
+</html>

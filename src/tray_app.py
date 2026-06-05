@@ -35,6 +35,9 @@ import pystray
 import config as cfg_mod
 import daemon_client as dc
 from keyboard_hook import HotkeyManager
+from toast import (
+    ToastController, TOAST_DURATION_INFO_MS, TOAST_DURATION_MODE_MS,
+)
 
 # --- Konstanten -------------------------------------------------------------
 
@@ -154,6 +157,7 @@ class TrayApp:
     def __init__(self) -> None:
         self._icon: pystray.Icon | None = None
         self._hk = HotkeyManager()
+        self._toast = ToastController(get_theme=self._toast_theme)
         self._stop_event = threading.Event()
         self._poll_thread: threading.Thread | None = None
 
@@ -194,6 +198,7 @@ class TrayApp:
         )
 
         self._hk.start()
+        self._toast.start()
 
         # Bootstrap + Poll in eigenem Thread, damit pystray.run() blockieren darf
         bootstrap_thread = threading.Thread(
@@ -206,6 +211,7 @@ class TrayApp:
         finally:
             self._stop_event.set()
             self._hk.stop()
+            self._toast.stop()
         return 0
 
     # -- Bootstrap -----------------------------------------------------------
@@ -346,7 +352,7 @@ class TrayApp:
                          "Modi aktivieren.")
             return
         _, ui = r
-        self._notify("Speech2Text", f"Modus: {ui}")
+        self._toast.show(f"Modus: {ui}", TOAST_DURATION_MODE_MS)
 
     # -- Poll-Loop -----------------------------------------------------------
 
@@ -477,6 +483,7 @@ class TrayApp:
         dc.shutdown()
         self._stop_event.set()
         self._hk.stop()
+        self._toast.stop()
         if self._icon is not None:
             self._icon.stop()
 
@@ -486,13 +493,25 @@ class TrayApp:
         if self._icon is not None:
             self._icon.title = text
 
-    def _notify(self, title: str, message: str) -> None:
-        if self._icon is None:
-            return
+    def _toast_theme(self) -> str:
+        """Aktuelles Theme (dark/light) aus config.json — get_theme-Callback
+        für den ToastController. Pro Toast neu gelesen, damit ein Theme-Wechsel
+        über den separaten Settings-Prozess sofort greift."""
         try:
-            self._icon.notify(message, title)
+            theme = cfg_mod.load_config().get("theme", "dark")
+        except Exception:  # noqa: BLE001
+            theme = "dark"
+        return theme if theme in ("dark", "light") else "dark"
+
+    def _notify(self, title: str, message: str) -> None:
+        # v1.4 Punkt 1: ALLE Tray-Meldungen laufen über das Custom-Popup
+        # (pystray.notify abgelöst). System-/Fehlertext zusätzlich ins Log
+        # (Diagnose) — niemals Diktattext (der landet hier ohnehin nie).
+        print(f"[Tray] {message}", flush=True)
+        try:
+            self._toast.show(message, TOAST_DURATION_INFO_MS)
         except Exception as e:  # noqa: BLE001
-            print(f"[Tray] notify-Fehler: {type(e).__name__}: {e}",
+            print(f"[Tray] toast-Fehler: {type(e).__name__}: {e}",
                   file=sys.stderr)
 
     def _open_settings_async(self) -> None:

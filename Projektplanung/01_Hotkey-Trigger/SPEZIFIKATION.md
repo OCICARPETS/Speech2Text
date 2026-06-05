@@ -1,6 +1,6 @@
 # SPEZIFIKATION: Hotkey-Trigger (AutoHotkey v2)
 
-*Status: ✅ produktiv · Priorität: 1 · Erstellt: 2026-04-24 · Validiert: 2026-04-24*
+*Status: ✅ produktiv (Python-Tray seit v1.3, Mode-Switch-Toast v1.4) · Priorität: 1 · Erstellt: 2026-04-24 · Validiert: 2026-04-24 · Update: 2026-06-05*
 
 ---
 
@@ -124,6 +124,26 @@ Bei gehaltener Taste feuert der Hotkey-Handler ~30x/Sekunde. Eine `up`-Variante 
 
 ### Caps-Lock-LED in RDP (kosmetisch)
 Die LED am Client toggelt trotz `SetCapsLockState "AlwaysOff"` — RDP synchronisiert den Lock-State zwischen Client und Server. Großschreibung bleibt aber **funktional** deaktiviert (Server wins beim Text-Input). Auf lokalen Clients ohne RDP ist auch die LED aus. Akzeptiert, nicht zu fixen.
+
+## 7c. v1.4 — Mode-Switch-Toast (Python-Tray, 2026-06-05)
+
+Seit v1.3 ist der Hotkey-Trigger ein Python-Tray (`src/tray_app.py`, ersetzt `shortcut.ahk` — Transition dokumentiert in `Projektplanung/07_Veroeffentlichungs-Readiness/PLAN.md`). v1.4 ersetzt die Mode-Switch-Benachrichtigung beim Cycle-Hotkey durch ein eigenes, schnell verschwindendes Custom-Popup statt des trägen pystray-System-Toasts (~5 s, keine Queue).
+
+**Neues Modul `src/toast.py` — `ToastController`:**
+- Eigener Daemon-Thread `ToastUI` mit eigenem `tk.Tk()`-Mainloop; `pystray.Icon.run()` bleibt 1:1 auf dem Main-Thread (minimales Regressionsrisiko — Architektur-Entscheidung „Ansatz A" aus dem Multi-Agent-Design).
+- `show(text, duration_ms)` ist von beliebigen Threads aufrufbar und macht NUR `queue.put_nowait` — alle Tk-Calls liegen ausschließlich im `ToastUI`-Thread (`_drain`/`_render`/`_hide`).
+- **Coalesce:** schnelles Mehrfach-Cyclen aktualisiert denselben Toast und setzt den Hide-Timer via `after_cancel` zurück (kein Stapeln). Mode-Switch `TOAST_DURATION_MODE_MS = 1500`, Fehler/Info `TOAST_DURATION_INFO_MS = 4000`.
+- Theme (dark/light) via `get_theme`-Callback aus `config.json`; `tkinter` wird LAZY erst im `ToastUI`-Thread importiert.
+
+**`src/tray_app.py`:** `_cycle_action` → `_toast.show(..., TOAST_DURATION_MODE_MS)`; `_notify` führt jetzt **alle** Tray-Meldungen über das Popup (pystray.notify abgelöst, User-Entscheidung) + loggt System-/Fehlertext nach `tray.log` (nie Diktattext). Start/Stop in `run()`/`_action_exit`, `_toast_theme`-Helper.
+
+**Build:** `scripts/build-tray.ps1` braucht `--collect-all tkinter` — das Tray-Bundle zog vorher KEIN tkinter (nur der Settings-Prozess). Exe 27,35 → 30,41 MB.
+
+### Bekannte Fallen (v1.4)
+- **`Tcl_AsyncDelete: async handler deleted by the wrong thread`** beim Beenden: tritt auf, wenn der Tcl-Interpreter vom Main-Thread abgeräumt wird, obwohl er im `ToastUI`-Thread erzeugt wurde. **Fix:** `stop()` macht KEINEN Tk-Aufruf vom Main-Thread, sondern setzt nur ein `Event`; der `ToastUI`-Thread beendet die Mainloop selbst (`_teardown_ui` via `_drain`) und gibt ALLE Tk-Referenzen im eigenen Thread frei (`self._root = self._win = self._label = None` im `_run_ui`-finally).
+- **tkinter-Bundling:** ohne `--collect-all tkinter` läuft der Dev-Modus (System-Python hat tk), aber die gebaute Exe crasht beim `ToastUI`-Start. **Bundle-Smoke der gebauten Exe ist Pflicht** (Start mit totem Daemon-Ziel `S2T_DAEMON_URL=127.0.0.1:1`, `tray.log` auf `[Toast]`-Fehler prüfen).
+- **Fokus-Klau:** Toplevel mit `overrideredirect` + `-topmost` + `-alpha 0.95`, KEIN `focus_set` — der Toast darf das aktive Eingabefenster während des Diktats nicht stören.
+- **Onefile-Parent/Child:** `Start-Process` liefert die Bootloader-Parent-PID; zum sauberen Killen `Stop-Process -Name Speech2Text-Hotkey` (killt Parent + Child), nicht per einzelner PID.
 
 ## 8. Offene Punkte und Entscheidungen
 
