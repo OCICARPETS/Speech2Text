@@ -42,7 +42,7 @@ Auf dem Terminal-Server bricht nach RDP-Reconnect die Diktat-Eingabe: „Aufnahm
 2. ✅ **Settings-GUI-Modernisierung** — Sun-Valley + Layout (`628da53`).
 3. ✅ **Mode-Umbenennung ad-hoc in Liste** — Refresh bei Anwenden/Speichern (`36b05ff`).
 
-→ Alle drei v1.4-UX-Backlog-Punkte abgeschlossen, bereit für v1.4.0-Release.
+→ Alle drei v1.4-UX-Backlog-Punkte + 2 Bugfixes (RDP-Audio-Watchdog, CapsLock-Stuck) abgeschlossen. **v1.4.0-Release erstellt (2026-06-08):** VERSION-Bump 1.3.1→1.4.0 in `build-distribution.py`, `dist/Speech2Text-v1.4.0.zip` (89,9 MB), Tag `v1.4.0` + GitHub-Release.
 
 **Punkt 1 — fertig (Code + Verifikation):** `src/toast.py` (ToastController, eigener ToastUI-Tk-Thread, Coalesce/Timer-Reset, Lazy-tkinter, Theme-Callback, event-basiertes `stop()` ohne Cross-Thread-Tk) + Tray-Edits (`tray_app.py`: Import, `__init__`, `run()`-start/stop, `_cycle_action`→Mode-Toast 1,5 s, `_notify`→Info-Toast ~4 s + Log, `_action_exit`, `_toast_theme`-Helper) + `scripts/build-tray.ps1` (`--collect-all tkinter`) + `tests/test_toast.py` (11 Tests). HTML-Mockup freigegeben. Dev-Smoke vom User bestätigt („sieht gut aus"), **`Tcl_AsyncDelete`-Teardown-Bug gefixt** (event-basiertes stop, Tk-Refs im ToastUI-Thread freigegeben — zweiter Lauf stderr sauber). Bundle-Smoke der gebauten Tray-Exe grün (tkinter geladen, keine `[Toast]`-Fehlerzeile).
 
