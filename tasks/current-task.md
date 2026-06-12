@@ -24,7 +24,11 @@
 - **Restart-Test:** Trays+Daemons gekillt, 1 Tray frisch gestartet → **genau 1 Daemon-Instanz + 1 Listener auf 17321** (vorher 2). `/health` stabil.
 - Vorher per Experiment bestätigt: Zombie-Daemon gekillt → 0 neue „verbinde neu" (Contention war die Ursache).
 
-**Sicherung:** master war clean + auf origin (Baseline `db1f3ad`) → GitHub-Stand gesichert, Rollback-Punkt vorhanden. Session-19-Fixes danach committet+gepusht.
+**✅ Release v1.4.2 (erledigt, 2026-06-12):** VERSION-Bump 1.4.1→1.4.2 (`build-distribution.py`, Commit `892b445`). Alle 3 Exes frisch aus aktuellem Quellstand gebaut (Daemon 37,13 MB / Tray 30,41 MB / Settings 23,09 MB — Settings enthält den neuen clean_dictation-Default). `dist/Speech2Text-v1.4.2.zip` (89,9 MB, Daemon-Hash im ZIP = `59F74DC0…` = Fix-Build verifiziert). Tag `v1.4.2` auf `892b445` (wie v1.4.1-Schema auf dem Bump-Commit) + GitHub-Release live: <https://github.com/OCICARPETS/Speech2Text/releases/tag/v1.4.2>. master = origin, clean.
+
+**Adversariale Verifikation (Workflow, 6 Dimensionen): 5× PASS + 1× WARN (behoben).** PASS: ZIP-Integrität (8 Dateien, Daemon-Hash im ZIP korrekt), GitHub-Release (Asset 94,3 MB, kein Draft, Notes mit beiden Fix-Commits), Git-Zustand (Tag→892b445, Fix-Commits im Range, clean), Code-Wahrheit (Single-Instance + neuer Prompt wirklich im getaggten Code, alte Prompt-Fassung weg), Testsuite (90/90). WARN war: ich hatte zunächst nur die Daemon-Exe ins Bundle hot-geswappt → Hotkey/Settings im Bundle noch alt. **Behoben:** alle 3 Exes ins Bundle deployt (Hashes Bundle = build/dist = ZIP identisch), Tray neu gestartet (= Live-Smoke neue Tray-Exe, kein Crash) → **installiertes Bundle = Release v1.4.2**, genau 1 Daemon + 1 Listener.
+
+**Sicherung:** master war clean + auf origin (Baseline `db1f3ad`) → GitHub-Stand gesichert, Rollback-Punkt vorhanden. Session-19-Fixes + Release danach committet+gepusht.
 
 **⚠️ OFFEN — Live-Mic-Test beim User (Pflicht-Gegenprobe):** Der echte Diktat-Test war hier **nicht** möglich — aktuell **kein Mikrofon** (`default input -1`, User hatte RDP getrennt; daher zeigt `/health` korrekt `prebuffer=off / stream_recovering=on`). Beim nächsten RDP-Reconnect heilt der Watchdog (Session-17-Reinit) den Stream → `prebuffer=on`. **User bitte testen:** (1) ein paar längere Diktate → kommt jetzt der volle Text an (keine 24 s→30 Zeichen mehr)? (2) Clean-Dictation: bleibt mehr Inhalt erhalten? Wenn weiterhin Audio-Verlust trotz **nur 1 Daemon** → dann liegt ein echter RDP-Mic-Drop vor (separate Spur), nicht mehr die Contention.
 
