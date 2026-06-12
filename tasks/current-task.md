@@ -24,6 +24,10 @@
 
 **✅ v1.4.1-Release erstellt (2026-06-12):** VERSION-Bump 1.4.0→1.4.1 in `build-distribution.py` (Commit `66dec8f`), `dist/Speech2Text-v1.4.1.zip` (89,9 MB, neue Daemon-Exe + unveränderte Tray/Settings aus v1.4.0), Tag `v1.4.1` + GitHub-Release live: <https://github.com/OCICARPETS/Speech2Text/releases/tag/v1.4.1>. master clean, 0 ahead. Fix-Commit `923a7a7` ist Teil des Release.
 
+**Heutige Commits (Session 17):** `923a7a7` fix(audio-daemon) PortAudio-Reinit, `66dec8f` chore(v1.4.1) VERSION-Bump, `887b185` docs(v1.4.1) current-task.
+
+**Wiedereinstieg (nächste Session):** Kein offener Scope. Einziger schwebender Punkt: der device-lose Selbstheilungs-Pfad bestätigt sich erst beim nächsten Reboot/RDP-Reconnect von selbst — tritt dann *kein* „Audio-Port-Fehler" mehr auf, ist der Fix endgültig validiert; tritt er doch auf, ist das die Stelle zum Nachfassen. Bei neuem Auftrag Scope hier eintragen (Arbeitsregel 9).
+
 ---
 
 **Hintergrund — Session 16 abgeschlossen (Release `v1.4.0` live, Stand stabil):**
