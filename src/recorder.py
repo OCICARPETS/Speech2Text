@@ -1001,6 +1001,25 @@ def _setup_hidden_logging() -> Path:
 
 # --- Entry-Point ------------------------------------------------------------
 
+class _SingleInstanceHTTPServer(ThreadingHTTPServer):
+    """ThreadingHTTPServer mit allow_reuse_address=False → harte Single-Instance.
+
+    `http.server.HTTPServer` setzt allow_reuse_address=1. Auf Windows erlaubt
+    SO_REUSEADDR ZWEI erfolgreiche Binds auf denselben Port — ein im Startup-
+    Race (Tray-Debounce 2 s < Daemon-Kaltstart ~6 s Onefile-Entpacken) doppelt
+    gespawnter Daemon stirbt dann NICHT mit „Address in use", sondern läuft
+    weiter und öffnet parallel das Mikrofon (Prebuffer-Stream) → zwei Streams
+    auf demselben WASAPI-Gerät → Contention → der Stream wird ständig stale →
+    der Self-Healing-Watchdog feuert im Dauerlauf, und einzelne Diktate liefern
+    fast nichts (Session 19: 24 s Audio → 30 Zeichen, mehrfach 0 Zeichen/s).
+
+    Mit allow_reuse_address=False scheitert der zweite Bind sauber; der
+    Zweit-Daemon beendet sich — und zwar (siehe main(): Bind VOR Recorder-Init)
+    BEVOR er das Mikrofon je anfasst. So hält genau ein Daemon das Mikrofon.
+    """
+    allow_reuse_address = False
+
+
 def main() -> int:
     # stdout/stderr robust auf UTF-8 stellen, sonst crashen print("▶ …") &
     # Co. auf cp1252-Consolen und wenn stdout durch eine Pipe läuft
@@ -1038,6 +1057,23 @@ def main() -> int:
         )
         return 2
 
+    # Single-Instance-Gate: Port ZUERST binden — BEVOR Recorder und Mikrofon
+    # initialisiert werden. Ein im Startup-Race doppelt gestarteter Daemon
+    # scheitert hier am Bind (allow_reuse_address=False) und beendet sich,
+    # OHNE je das Mikrofon zu belegen → kein zweiter Mic-Stream, keine
+    # WASAPI-Contention, kein Watchdog-Dauerlauf (Session-19-Fix).
+    # ThreadingHTTPServer: jede Request landet in einem eigenen Thread —
+    # verhindert, dass /start oder /stop hinter laufenden /health-Polls warten
+    # muss. Recorder-State ist mit self._lock geschützt → thread-safe.
+    try:
+        server = _SingleInstanceHTTPServer((HOST, PORT), Handler)
+    except OSError as e:
+        print(f"❌  Port {PORT} bereits belegt — es läuft schon ein Daemon. "
+              f"Beende diese Instanz.", file=sys.stderr)
+        print(f"    ({type(e).__name__}: {e})", file=sys.stderr)
+        return 3
+
+    # Erst NACH erfolgreichem Port-Bind das Mikrofon + den Recorder öffnen.
     recorder = Recorder(app_config, api_key)
     Handler.recorder = recorder
 
@@ -1051,18 +1087,6 @@ def main() -> int:
         except Exception:  # noqa: BLE001
             pass
     threading.Thread(target=_warmup, daemon=True).start()
-
-    try:
-        # ThreadingHTTPServer: jede Request landet in einem eigenen Thread.
-        # Verhindert, dass /start oder /stop hinter laufenden /health-Polls
-        # von AHK warten muss (single-threaded BaseHTTPServer hatte hier
-        # gelegentliche Connection-Refused-Races).
-        # Recorder-State ist mit self._lock geschützt → thread-safe.
-        server = ThreadingHTTPServer((HOST, PORT), Handler)
-    except OSError as e:
-        print(f"❌  Port {PORT} nicht verfügbar: {e}", file=sys.stderr)
-        print("    Läuft der Daemon bereits?", file=sys.stderr)
-        return 3
 
     print(f"Speech2Text Daemon läuft auf http://{HOST}:{PORT}")
     print(f"  Config:     {cfg_mod.config_path()}")

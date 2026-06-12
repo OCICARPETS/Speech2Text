@@ -169,9 +169,30 @@ elif self.path == "/shutdown":
 
 Hard-Exit nach 150 ms ist essenziell — sonst `pythonw.exe`-Zombie.
 
+## 9a. Single-Instance über den HTTP-Port (Session 19, 2026-06-12)
+
+`http.server.HTTPServer` setzt `allow_reuse_address = 1`. Auf **Windows** erlaubt
+SO_REUSEADDR **zwei erfolgreiche Binds** auf denselben Port — ein im Startup-Race
+(Tray-Debounce 2 s < Daemon-Kaltstart ~6 s Onefile-Entpacken) doppelt gespawnter
+Daemon stirbt dann NICHT mit „Address in use", sondern läuft weiter und öffnet
+**parallel das Mikrofon** (Prebuffer-Stream). Zwei Streams auf demselben
+WASAPI-Gerät → Contention → der Stream wird ständig stale → der Self-Healing-
+Watchdog (§9) feuert im Dauerlauf, und einzelne Diktate liefern fast nichts
+(gemessen: 24 s Audio → 30 Zeichen, mehrfach 0 Zeichen/s).
+
+**Fix:** `class _SingleInstanceHTTPServer(ThreadingHTTPServer)` mit
+`allow_reuse_address = False` **+** in `main()` den **Port-Bind VOR die
+Recorder-/Mikrofon-Initialisierung** ziehen. Der zweite Daemon scheitert sauber
+am Bind (`WinError 10048`, Exit-Code 3) und beendet sich, BEVOR er das Mikrofon
+je anfasst → genau ein Daemon hält das Mikrofon. Verifiziert: Frozen-Exe gegen
+laufenden Daemon → Exit 3; frischer Tray-Start → genau 1 Daemon + 1 Listener auf
+17321. Tests: `tests/test_recorder_single_instance.py`. Memory:
+`feedback_localhost_daemon_single_instance`.
+
 ## 10. Historie & Verweise
 
 - **Entstehung:** Briefing 2026-04-24. IPC-Mechanismus: Datei-Flag vs. Socket vs. HTTP → HTTP gewählt wegen AHK-Freundlichkeit.
+- **Session 19 (2026-06-12):** Single-Instance-Sperre über den Port (§9a) — behebt den Doppel-Daemon aus Session 18 (Root Cause der „unsauberen" Spracheingabe).
 - **Zugehörige Dateien:** `src/recorder.py`, `scripts/start-daemon.bat`
 - **Referenzen:**
   - `sounddevice` Docs: https://python-sounddevice.readthedocs.io/ (Stand 2026-04-24)
