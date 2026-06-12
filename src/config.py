@@ -36,9 +36,25 @@ MODES: dict[str, dict[str, str | None]] = {
         "ui_name": "Clean Dictation",
         "description": "Entfernt nur Füllwörter (äh, em, halt) und "
                        "Wortwiederholungen. Struktur bleibt exakt erhalten.",
+        # Anti-Paraphrase-Prompt (Session 19): gpt-4o-mini neigte mit der alten
+        # Kurzfassung dazu, den Text umzuschreiben/zusammenzufassen (−15 bis
+        # −26 % Zeichen, A/B-belegt) statt nur Füllwörter zu löschen. Die
+        # explizite „Wort für Wort"-Anweisung + die Verbotsliste senkt die
+        # Kürzung auf reine Füllwort-Entfernung und bewahrt Inhaltswörter,
+        # Zahlen und Eigennamen (z. B. Kundennamen) wörtlich.
         "prompt": (
-            "Entferne ausschließlich Füllwörter (äh, em, halt, so) und "
-            "Wortwiederholungen. Behalte die Struktur exakt bei. "
+            "Du bist ein reiner Transkript-Bereiniger, kein Lektor. Gib den "
+            "gesprochenen Text Wort für Wort wieder und entferne "
+            "AUSSCHLIESSLICH:\n"
+            "- Füllwörter (z. B. äh, ähm, em, halt, also, ja, ne, sozusagen, "
+            "quasi, eigentlich),\n"
+            "- unmittelbare Wortwiederholungen und Versprecher,\n"
+            "- abgebrochene Satzanfänge bzw. Selbstkorrekturen.\n"
+            "STRIKT VERBOTEN: umformulieren, zusammenfassen, kürzen, Sätze "
+            "glätten, Synonyme einsetzen, die Reihenfolge ändern oder Inhalte "
+            "weglassen bzw. hinzufügen. Jedes inhaltstragende Wort, jede Zahl "
+            "und jeder Eigenname bleibt unverändert erhalten. Im Zweifel "
+            "behalte das Wort.\n"
             "Antworte ausschließlich mit dem bereinigten Text, ohne "
             "Einleitung oder Kommentar."
         ),

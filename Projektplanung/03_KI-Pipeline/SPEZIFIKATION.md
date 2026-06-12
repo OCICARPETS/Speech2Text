@@ -111,11 +111,13 @@ Optimierter Text (string) → 04_Text-Ausgabe
 - **`resp.text` vs. `resp.text()`:** Bei `transcriptions.create` ist es `resp.text` (Property, kein Call). ✅ Umgesetzt.
 - **`message.content` kann `None` sein:** Falls der Optimizer aus irgendeinem Grund leer antwortet. Fallback auf `""` + `strip()`. ✅ Umgesetzt.
 - **API-Key-Leakage:** Niemals `print(os.environ)` oder `print(client)` — OpenAI-Client hält den Key als Attribut. `.env`-Datei gitignore!
+- **`gpt-4o-mini` paraphrasiert „hilfreich" (Session 19):** Bei knapp formulierten „Bereinigungs"-Prompts schreibt das Modell den Text um/fasst zusammen, statt nur Füllwörter zu löschen — A/B-belegt −15 bis −26 % Zeichen für `clean_dictation`. Gegenmittel: expliziter Anti-Paraphrase-Prompt („Wort für Wort", Verbotsliste umformulieren/zusammenfassen/kürzen, Zahlen/Eigennamen schützen). Senkt die Kürzung auf reine Füllwort-Entfernung (−11 bis −17 %, Inhaltswörter bleiben). Prompt-Texte leben in `src/config.py` → `MODES`, nicht im Daemon-Code.
 
 ## 10. Historie & Verweise
 
 - **Entstehung:** Briefing 2026-04-24. Modell-Frage (`gpt-4o-audio-preview` vs. `gpt-4o-transcribe + mini`) explizit abgestimmt.
-- **Zugehörige Dateien:** `src/recorder.py` (Methoden `_transcribe`, `_optimize`).
+- **Session 19 (2026-06-12):** `clean_dictation`-System-Prompt anti-paraphrase gehärtet (s. Gotcha §9 + `tests/test_config_clean_dictation.py`). Kein Modellwechsel.
+- **Zugehörige Dateien:** `src/recorder.py` (Methoden `_transcribe`, `_optimize`), `src/config.py` (`MODES`-Prompts).
 - **Referenzen:**
   - OpenAI Speech-to-Text Guide: https://platform.openai.com/docs/guides/speech-to-text (Stand 2026-04-24)
   - OpenAI API Reference Transcriptions: https://platform.openai.com/docs/api-reference/audio/createTranscription
