@@ -32,7 +32,7 @@ from pathlib import Path
 # Kein .resolve() — siehe Memory feedback_path_resolve_unc_falle (I: ist
 # Substituted-Drive auf UNC; resolve() macht externe Tools unzugaenglich).
 PROJECT_ROOT = Path(__file__).parent.parent
-VERSION = "1.4.1"
+VERSION = "1.4.2"
 DIST_NAME = f"Speech2Text-v{VERSION}"
 
 SRC_DIST = PROJECT_ROOT / "build" / "dist"
