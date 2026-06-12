@@ -1,6 +1,6 @@
 # Current Task — Speech2Text
 
-*Letzte Aktualisierung: 2026-06-12 (Session 17 — Bugfix „PortAudio-Stale-Device-Cache": Watchdog-Reinit + Reinit beim Tastendruck)*
+*Letzte Aktualisierung: 2026-06-12 (Session 17 — Bugfix „PortAudio-Stale-Device-Cache" + Release `v1.4.1` live)*
 *Zu lesen am Anfang jeder Session — siehe `CLAUDE.md` Arbeitsregel 1.*
 
 ---
@@ -22,7 +22,7 @@
 
 **Nicht im Scope (eingehalten):** kein Modellwechsel, kein Release-Bump, keine Änderung am Caps-Lock-Verhalten.
 
-**▶ Aktiver Folge-Scope (vom User beauftragt, 2026-06-12):** v1.4.1-Release — VERSION-Bump 1.4.0→1.4.1 in `build-distribution.py`, Distribution-ZIP (NEUE Daemon-Exe + unveränderte Tray/Settings aus dem v1.4.0-Bundle), Commit, Tag `v1.4.1` + GitHub-Release. Nur Patch (Bugfix-Release).
+**✅ v1.4.1-Release erstellt (2026-06-12):** VERSION-Bump 1.4.0→1.4.1 in `build-distribution.py` (Commit `66dec8f`), `dist/Speech2Text-v1.4.1.zip` (89,9 MB, neue Daemon-Exe + unveränderte Tray/Settings aus v1.4.0), Tag `v1.4.1` + GitHub-Release live: <https://github.com/OCICARPETS/Speech2Text/releases/tag/v1.4.1>. master clean, 0 ahead. Fix-Commit `923a7a7` ist Teil des Release.
 
 ---
 
