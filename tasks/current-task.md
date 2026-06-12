@@ -1,13 +1,37 @@
 # Current Task — Speech2Text
 
-*Letzte Aktualisierung: 2026-06-05 (Session 16 — v1.4 Punkt 1 (Mode-Switch-Toast) + Punkt 3 (Mode-Umbenennung) live + committet)*
+*Letzte Aktualisierung: 2026-06-12 (Session 17 — Bugfix „PortAudio-Stale-Device-Cache": Watchdog-Reinit + Reinit beim Tastendruck)*
 *Zu lesen am Anfang jeder Session — siehe `CLAUDE.md` Arbeitsregel 1.*
 
 ---
 
 ## Aktueller Stand
 
-**🐞 Aktive Untersuchung (Session 16, Forts.) — RDP-Disconnect-Audio-Bug:**
+**✅ Session 17 (2026-06-12) — ABGESCHLOSSEN: Bugfix „PortAudio-Stale-Device-Cache" (Watchdog-Reinit + Reinit beim Tastendruck).**
+
+**Symptom (User):** Nach Windows-Updates + Reboot auf dem Terminal-Server kam beim Aufnahme-Druck dauerhaft ein „Audio-Port-Fehler". `/health` zeigte `last_error=Mikrofon konnte nicht geöffnet werden: PortAudioError: Error querying device -1`, `prebuffer=off`, `stream_recovering=on`.
+
+**Root Cause (per Diagnose bestätigt):** Das Mikro WAR durchgereicht — RDP-Policy `fDisableAudioCapture=0`, Audio-Dienste laufen, ein frischer Prozess sah „Remoteaudio" als Default-Input (5 Aufnahmegeräte). ABER: PortAudio cached die Geräteliste beim `Pa_Initialize`. Der Daemon startete per Autostart nach dem Reboot, BEVOR das RDP-„Remoteaudio"-Gerät registriert war → Default-Input intern dauerhaft −1. Der v1.4-Watchdog macht nur Stream-`close+open`, ruft aber nie `sd._terminate()/_initialize()` → die Geräteliste wird nie neu eingelesen. Nur ein Daemon-**Neustart** heilte (frischer Prozess = frische PortAudio-Init). **Sofort-Entstörung bereits erfolgt** (beide Daemon-PIDs gekillt, Tray hat neu gestartet, `/health` grün: `prebuffer=on`, `audio_age=0.0`, kein Fehler; User-Diktat bestätigt).
+
+**Umgesetzt (TDD, alle grün):**
+1. ✅ **Watchdog-Reinit** — neue `_reinit_portaudio()` (= `sd._terminate()` + `sd._initialize()`), in `_maybe_recover_stream` **zwischen** close und open → Geräteliste wird beim Recovery neu eingelesen, nicht nur der Stream neu geöffnet.
+2. ✅ **Reinit beim Tastendruck** — `start()`-Stale-Guard macht Sofort-Recovery (Reinit+Reopen, sonst weiter abweisen); neuer On-Demand-Helper `_open_ondemand_stream()` mit Reinit-Retry.
+3. ✅ **Tests + Build + Deploy** — `tests/test_recorder_stream_watchdog.py` +7 (`TestReinitPortAudio`/`TestWatchdogReinit`/`TestStartGuardImmediateRecovery`/`TestOnDemandReinitRetry`), **82/82 grün**, `py_compile` OK. Daemon-Exe (37,12 MB) neu gebaut + ins Bundle deployt (SHA256 `B6883C98…`), Tray neu gestartet, `/health` grün (`prebuffer=on`, `audio_age=0.0`, kein Fehler). Spec `02_Audio-Daemon` §9 ergänzt.
+
+**Live-Validierung offen:** Der device-lose Selbstheilungs-Pfad ist durch Unit-Tests (gemockt) + gesunden Normalbetrieb abgedeckt; der echte Fall (Recovery ohne manuellen Neustart) lässt sich erst beim nächsten Reboot/RDP-Reconnect bestätigen. Sofort-Entstörung war ein Daemon-Neustart (User-Diktat bestätigt).
+
+**Nicht im Scope (eingehalten):** kein Modellwechsel, kein Release-Bump, keine Änderung am Caps-Lock-Verhalten.
+
+**Offen / optional:** v1.4.1-Release (Tag + ZIP + GitHub-Release) mit User abstimmen — nur Daemon-Exe ist neu, Tray/Settings unverändert.
+
+---
+
+**Hintergrund — Session 16 abgeschlossen (Release `v1.4.0` live, Stand stabil):**
+Alle Exes (Tray 30,41 MB, Settings 23,09 MB, Daemon 37,12 MB) deployt + live-validiert. GitHub-Release: <https://github.com/OCICARPETS/Speech2Text/releases/tag/v1.4.0> (Tag `v1.4.0`, ZIP 89,9 MB). master clean. **6 Commits:** Mode-Switch-Toast (`e5ca248`), Mode-Umbenennung (`36b05ff`), Doku (`5722ae3`), RDP-Audio-Watchdog (`1d43d7c`), CapsLock-Stuck (`246514d`), Release-Bump 1.4.0 (`0bdcc5f`). Detail-Historie Session 16 unten ⬇
+
+---
+
+**🐞 Bugfix (erledigt) — RDP-Disconnect-Audio-Bug:**
 Auf dem Terminal-Server bricht nach RDP-Reconnect die Diktat-Eingabe: „Aufnahme zu kurz / kennt die Aufnahme nicht mehr". **Root Cause (per daemon.log bestätigt):** Der persistente Prebuffer-`sd.InputStream` (`recorder.py`, `_open_persistent_stream`) stirbt nach einer Audio-Geräte-Störung. Log zeigt `[audio status] input overflow` direkt vor Serien von „Keine Audiodaten aufgenommen" — bei REALEN Aufnahme-Fenstern (▶ gestartet + Post-Roll laufen, also `/start` **und** `/stop` kamen sauber an), aber `_chunks` bleibt leer. Der Daemon erkennt/repariert den toten Stream NICHT (`_on_audio` wird nicht mehr aufgerufen, kein Reopen). **Hook (H2) verworfen** — Tasten kommen korrekt durch. Auf dem Terminal-Server entfernt der RDP-Disconnect das session-redirected Mikro → Stream tot.
 **Fix umgesetzt (Self-Healing-Watchdog, User-Wahl):** `recorder.py` —
 - `_last_audio_ts` (Lebenszeichen, in `_on_audio` gesetzt) + `STREAM_STALE_S=2.0`, `STREAM_WATCHDOG_INTERVAL_S=1.0`.
@@ -22,7 +46,7 @@ Auf dem Terminal-Server bricht nach RDP-Reconnect die Diktat-Eingabe: „Aufnahm
 **✅ Live-validiert (RDP-Reconnect-Test durch User, 2026-06-05):** daemon.log belegt `[audio status] input overflow` → `🔁 Audio-Stream reagiert nicht (age=2.1s) — verbinde neu…` → danach „▶ Aufnahme gestartet → 📝 Roh <45 Zeichen> → ✔ eingefügt". User-Bestätigung: „das Diktat klappte wieder" **ohne Neustart**. Toast „Mikrofon verloren…" feuerte (tray.log Z.1161), war aber während der getrennten RDP-Sitzung unsichtbar + Erholung zu schnell → User entschied: Verhalten so belassen (kein Recovery-Bestätigungs-Toast). Schutz bleibt über den `start()`-Guard (sichtbar bei Druck auf totes Mikro).
 **Abgeschlossen** — Commit `1d43d7c`, gepusht (Spec `02_Audio-Daemon` §9 ergänzt).
 
-**🐞 Aktive Untersuchung 2 — CapsLock bleibt manchmal hängen (bei CapsLock als Diktat-Hotkey):**
+**🐞 Bugfix (erledigt) 2 — CapsLock bleibt manchmal hängen (bei CapsLock als Diktat-Hotkey):**
 **Root Cause (vom User bestätigt: trat bei Ctrl+CapsLock auf):** Bindung ist `(0, CapsLock)`. Wird CapsLock mit einem (echten oder nach RDP-Reconnect stale) Modifier gedrückt, sucht der Hook `(Ctrl, CapsLock)` → kein Match → `_handle_event` reicht durch (`if entry is None and mods != 0: return _PASS`, `keyboard_hook.py`) → Windows toggelt CapsLock AN. Normale CapsLock-Drücke (mods=0) werden korrekt unterdrückt → kein Ausschalten mehr möglich → hängt bis Programm-Neustart. Asymmetrie (an, aber nicht aus) = Hook lebt + unterdrückt, leakt nur bei Modifier-Druck.
 **Fix (umgesetzt, vom User freigegeben — CapsLock ist bestätigungspflichtiger Bereich):** (1) Lock-Tasten (CapsLock/NumLock/ScrollLock) modifier-los gebunden → IMMER abfangen, egal welcher Modifier (`_LOCK_VKS`, Match via `(0,vk)`, gemerkte Bindung für KeyUp). NUR Lock-Tasten — normale Tasten behalten Modifier-Mismatch-Pass-Through. (2) Selbstheilung: `_force_lock_off(vk)` nach unterdrücktem Lock-Druck (Hook-Thread, `GetKeyState`-Toggle + `keybd_event`-Injection) — hängendes CapsLock klärt sich bei nächster Nutzung selbst (Notausgang Ctrl+CapsLock entfällt durch Fix 1, daher Fix 2 Pflicht).
 **✅ Live-validiert (2026-06-05):** User bestätigt — Ctrl+CapsLock toggelt nicht mehr, Diktat normal. 6 neue Tests (`TestHandleEventLockKey`), 75/75 grün, Tray-Exe (30,41 MB) gebaut + deployt. **Abgeschlossen** — Commit+Push via /bugfix-done (Spec `01_Hotkey-Trigger` §7a ergänzt).

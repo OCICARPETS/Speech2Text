@@ -329,6 +329,68 @@ class Recorder:
         if verbose:
             print("🎙  Prebuffer-Stream geschlossen")
 
+    def _reinit_portaudio(self, verbose: bool = True) -> None:
+        """PortAudio terminieren + neu initialisieren, damit die GERÄTELISTE
+        neu eingelesen wird.
+
+        Hintergrund: PortAudio cached die Geräteliste beim `Pa_Initialize`.
+        Startet der Daemon ohne Aufnahmegerät (z. B. Autostart nach Reboot,
+        BEVOR das per RDP durchgereichte „Remoteaudio"-Gerät registriert ist),
+        bleibt der Default-Input intern dauerhaft -1 → `sd.InputStream(
+        device=None)` wirft „Error querying device -1", egal wie oft man nur
+        den *Stream* neu öffnet. Erst `sd._terminate()` + `sd._initialize()`
+        liest die Geräteliste neu ein.
+
+        NUR aufrufen, wenn KEIN Stream offen ist (sonst reißt terminate den
+        laufenden Stream weg) — Watchdog/start() rufen es im IDLE-Zustand
+        zwischen close und open auf.
+        """
+        try:
+            sd._terminate()
+            sd._initialize()
+            if verbose:
+                print("🔄  PortAudio neu initialisiert (Geräteliste aktualisiert)")
+        except Exception as e:  # noqa: BLE001
+            # Reinit-Fehler darf die Recovery nicht abbrechen — der folgende
+            # Open-Versuch zeigt ohnehin, ob wieder ein Gerät da ist.
+            if verbose:
+                print(f"⚠  PortAudio-Reinit-Fehler: {type(e).__name__}: {e}",
+                      file=sys.stderr)
+
+    def _open_ondemand_stream(self, device) -> bool:
+        """On-Demand-Stream (Prebuffer aus) für eine einzelne Aufnahme öffnen.
+
+        Fix(2): scheitert das Öffnen (z. B. Default-Input -1, weil das Gerät
+        beim PortAudio-Init noch nicht da war), EINMAL PortAudio neu
+        initialisieren (Geräteliste auffrischen) und genau einmal erneut
+        versuchen. Rückgabe: True wenn der Stream läuft, sonst False
+        (`last_error` ist dann gesetzt, State bleibt beim Aufrufer IDLE).
+        """
+        for attempt in (1, 2):
+            try:
+                self._stream = sd.InputStream(
+                    samplerate=SAMPLE_RATE,
+                    channels=CHANNELS,
+                    dtype=DTYPE,
+                    callback=self._on_audio,
+                    device=device,
+                )
+                self._stream.start()
+                return True
+            except Exception as e:  # noqa: BLE001
+                self._stream = None
+                if attempt == 1:
+                    print(f"⚠  Mikro-Open fehlgeschlagen ({type(e).__name__}) — "
+                          f"PortAudio-Reinit + Retry…", file=sys.stderr)
+                    self._reinit_portaudio(verbose=False)
+                    continue
+                err = (f"Mikrofon konnte nicht geöffnet werden: "
+                       f"{type(e).__name__}: {e}")
+                print(f"❌  {err}", file=sys.stderr)
+                self._set_error(err)
+                return False
+        return False
+
     # --- Stream-Watchdog (Self-Healing gegen RDP-Reconnect) ---------------
 
     def _stream_watchdog_loop(self) -> None:
@@ -366,6 +428,9 @@ class Recorder:
                 self._set_error(
                     "Mikrofon verloren — verbinde neu, gleich wieder bereit…")
             self._close_persistent_stream(verbose=False)
+            # Geräteliste neu einlesen (Fix): close+open allein heilt NICHT,
+            # wenn PortAudio device-los initialisiert wurde (Default-Input -1).
+            self._reinit_portaudio(verbose=False)
             self._open_persistent_stream(verbose=False)
 
     def reload_config(self) -> str:
@@ -492,18 +557,29 @@ class Recorder:
                 self._set_error(msg)
                 return
             # RDP-Reconnect-Schutz: ist der Prebuffer-Stream tot (liefert keine
-            # Frames mehr), NICHT ins Leere aufnehmen — der User spräche sonst
-            # umsonst und müsste alles wiederholen. Stattdessen sofort melden;
-            # der Watchdog stellt den Stream im Hintergrund wieder her.
+            # Frames mehr)? Fix(2): NICHT nur abweisen, sondern SOFORT eine
+            # Recovery versuchen (PortAudio neu initialisieren + Stream neu
+            # öffnen) — oft klappt dann schon dieser Tastendruck. Erst wenn die
+            # Sofort-Recovery nicht greift, abweisen und dem Watchdog überlassen
+            # (kein Ins-Leere-Aufnehmen — der User spräche sonst umsonst).
             if (self._stream_always_on
                     and _stream_is_stale(time.time(), self._last_audio_ts,
                                          STREAM_STALE_S)):
-                msg = "Mikrofon wird neu verbunden — bitte gleich nochmal drücken."
-                print(f"⚠  {msg}")
-                self._set_error(msg)
-                # Verhindert einen doppelten „verloren"-Toast aus dem Watchdog.
-                self._stream_recovering = True
-                return
+                print("⚠  Mikrofon reagiert beim Druck nicht — Sofort-Recovery…",
+                      file=sys.stderr)
+                self._close_persistent_stream(verbose=False)
+                self._reinit_portaudio(verbose=False)
+                self._open_persistent_stream(verbose=False)
+                if not self._stream_always_on:
+                    # Reopen scheiterte (Gerät noch weg) — Watchdog macht weiter.
+                    msg = ("Mikrofon wird neu verbunden — "
+                           "bitte gleich nochmal drücken.")
+                    print(f"⚠  {msg}")
+                    self._set_error(msg)
+                    # Verhindert einen doppelten „verloren"-Toast aus dem Watchdog.
+                    self._stream_recovering = True
+                    return
+                # Stream wieder offen → unten normal als Prebuffer aufnehmen.
             # Mode-Override für diese Session merken (None = aktiver Modus).
             # Liegt im Lock, damit _process keinen halben Wert sieht.
             self._session_mode = mode_override if mode_override in cfg_mod.MODES else None
@@ -519,26 +595,13 @@ class Recorder:
                 self.state = State.RECORDING
                 print("▶  Aufnahme gestartet (prebuffer)")
             else:
-                # On-Demand-Modus: Stream pro Diktat öffnen. Try-wrap, weil
-                # sd.InputStream(...) werfen kann (Mikro belegt, falsches
-                # Device) — sonst HTTP-500 statt sauberer Toast-Meldung.
+                # On-Demand-Modus: Stream pro Diktat öffnen. _open_ondemand_stream
+                # kapselt Try + PortAudio-Reinit-Retry (Fix(2)) — sonst HTTP-500
+                # statt sauberer Toast-Meldung, und ein device=-1 nach Reboot
+                # endete in einer Dauer-Fehlermeldung.
                 device = self.config.get("audio_device")
-                try:
-                    self._stream = sd.InputStream(
-                        samplerate=SAMPLE_RATE,
-                        channels=CHANNELS,
-                        dtype=DTYPE,
-                        callback=self._on_audio,
-                        device=device,
-                    )
-                    self._stream.start()
-                except Exception as e:  # noqa: BLE001
-                    self._stream = None
-                    err = (f"Mikrofon konnte nicht geöffnet werden: "
-                           f"{type(e).__name__}: {e}")
-                    print(f"❌  {err}", file=sys.stderr)
-                    self._set_error(err)
-                    return  # State bleibt IDLE
+                if not self._open_ondemand_stream(device):
+                    return  # Fehler ist gesetzt, State bleibt IDLE
                 self.state = State.RECORDING
                 print("▶  Aufnahme gestartet")
 
