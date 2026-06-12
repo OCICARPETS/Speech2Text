@@ -22,7 +22,7 @@
 
 **Nicht im Scope (eingehalten):** kein Modellwechsel, kein Release-Bump, keine Änderung am Caps-Lock-Verhalten.
 
-**Offen / optional:** v1.4.1-Release (Tag + ZIP + GitHub-Release) mit User abstimmen — nur Daemon-Exe ist neu, Tray/Settings unverändert.
+**▶ Aktiver Folge-Scope (vom User beauftragt, 2026-06-12):** v1.4.1-Release — VERSION-Bump 1.4.0→1.4.1 in `build-distribution.py`, Distribution-ZIP (NEUE Daemon-Exe + unveränderte Tray/Settings aus dem v1.4.0-Bundle), Commit, Tag `v1.4.1` + GitHub-Release. Nur Patch (Bugfix-Release).
 
 ---
 
