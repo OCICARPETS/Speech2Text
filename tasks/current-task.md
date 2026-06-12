@@ -1,7 +1,34 @@
 # Current Task — Speech2Text
 
-*Letzte Aktualisierung: 2026-06-12 (Session 18 — Mehrfach-Prozess-Aufräumung + Autostart-Diagnose · Aufräumung erledigt, dauerhafter Fix offen)*
+*Letzte Aktualisierung: 2026-06-12 (Session 19 — Diktat-Qualität: Doppel-Daemon-Fix + Clean-Dictation-Prompt · Code+Tests+Deploy erledigt, Live-Mic-Test offen beim User)*
 *Zu lesen am Anfang jeder Session — siehe `CLAUDE.md` Arbeitsregel 1.*
+
+---
+
+## Aktueller Scope (Session 19, 2026-06-12) — vom User beauftragt
+
+**Auftrag (User, autonom, „ich muss weg"):** „Spracheingabe funktioniert seit dem letzten Update nicht mehr gut. Funktionieren Pre-Roll/Post-Roll richtig? Clean-Dictation-Mode kürzt/verschluckt relativ viel — woran liegt das, ggf. Prompt verbessern. Vorher Stand in GitHub sichern, dann Verbesserungen möglichst selbständig durchführen, iterieren."
+
+**Root-Cause-Diagnose (abgeschlossen, evidenzbasiert aus daemon.log + Live-Health):**
+1. **Audio „unsauber" (Hauptursache) = der Doppel-Daemon aus Session 18.** Beim Reboot starteten erneut **2 Daemon-Instanzen** (Startup-Race), beide öffnen den Mikro-Prebuffer-Stream → WASAPI-Contention → **39× „verbinde neu"** im Log → einzelne Aufnahmen liefern fast nichts (`24,4 s → 30 Zeichen`, mehrere `0 Z/s`). **Bestätigt per Experiment:** Zombie-Daemon gekillt → 0 neue Reconnects. **Pre-Roll/Post-Roll-Logik selbst ist korrekt** (jede Aufnahme zeigt `+494 ms Pre-Roll`, `Post-Roll 350 ms`); sie arbeitet nur auf einem korrumpierten Stream.
+2. **Clean-Dictation kürzt zu viel:** gpt-4o-mini paraphrasiert/komprimiert (−15 % bis −26 %), obwohl der Modus nur Füllwörter entfernen soll. Prompt zu schwach gegen die Umschreib-Neigung des Modells.
+
+**Fixes (ERLEDIGT, TDD, deployt):**
+- **A — Single-Instance-Daemon** (`recorder.py`): neue `class _SingleInstanceHTTPServer(ThreadingHTTPServer)` mit `allow_reuse_address=False` (HTTPServer-Default ist 1 → erlaubte Windows-Doppel-Bind) + **Port-Bind VOR Mikro-Öffnung** in `main()`, damit der zweite Daemon am Bind stirbt (Exit 3), bevor er das Mikro belegt. = die in Session 18 empfohlene Variante A. Spec `02_Audio-Daemon` §9a.
+- **B — Clean-Dictation-Prompt** (`config.py` `MODES`): anti-paraphrase gehärtet (Wort-für-Wort, Verbotsliste umformulieren/zusammenfassen/kürzen, Zahlen/Eigennamen geschützt). A/B-belegt: Kürzung sinkt von −15…−26 % auf −11…−17 %, Inhaltswörter/Namen bleiben (z. B. „genau Zurbrüggen"). Kein Modellwechsel. Spec `03_KI-Pipeline` §9.
+
+**Verifikation (erledigt):**
+- `py_compile` OK; **volle Suite 90/90 grün** (82 vorher + 8 neue: `tests/test_recorder_single_instance.py`, `tests/test_config_clean_dictation.py`).
+- Daemon-Exe neu gebaut (37,13 MB, SHA256 `59F74DC0…`) + ins Bundle deployt (Hash am Ziel identisch).
+- **Smoke-Test Frozen-Exe:** neue Exe gegen laufenden Daemon → erkennt Port belegt (`WinError 10048`) → **Exit 3**, ohne Mikro zu öffnen.
+- **Restart-Test:** Trays+Daemons gekillt, 1 Tray frisch gestartet → **genau 1 Daemon-Instanz + 1 Listener auf 17321** (vorher 2). `/health` stabil.
+- Vorher per Experiment bestätigt: Zombie-Daemon gekillt → 0 neue „verbinde neu" (Contention war die Ursache).
+
+**Sicherung:** master war clean + auf origin (Baseline `db1f3ad`) → GitHub-Stand gesichert, Rollback-Punkt vorhanden. Session-19-Fixes danach committet+gepusht.
+
+**⚠️ OFFEN — Live-Mic-Test beim User (Pflicht-Gegenprobe):** Der echte Diktat-Test war hier **nicht** möglich — aktuell **kein Mikrofon** (`default input -1`, User hatte RDP getrennt; daher zeigt `/health` korrekt `prebuffer=off / stream_recovering=on`). Beim nächsten RDP-Reconnect heilt der Watchdog (Session-17-Reinit) den Stream → `prebuffer=on`. **User bitte testen:** (1) ein paar längere Diktate → kommt jetzt der volle Text an (keine 24 s→30 Zeichen mehr)? (2) Clean-Dictation: bleibt mehr Inhalt erhalten? Wenn weiterhin Audio-Verlust trotz **nur 1 Daemon** → dann liegt ein echter RDP-Mic-Drop vor (separate Spur), nicht mehr die Contention.
+
+**Hinweis Nicht-im-Scope (eingehalten):** Pre-/Post-Roll-**Logik** ist korrekt und wurde NICHT geändert (User-Config 500/350 ms greift, Log zeigt `+494 ms Pre-Roll`). Kein Caps-Lock-Touch, kein Modellwechsel, kein Release-Bump (Entscheidung beim User — siehe 💡 unten).
 
 ---
 
