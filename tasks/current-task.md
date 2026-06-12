@@ -1,11 +1,39 @@
 # Current Task — Speech2Text
 
-*Letzte Aktualisierung: 2026-06-12 (Session 17 — Bugfix „PortAudio-Stale-Device-Cache" + Release `v1.4.1` live)*
+*Letzte Aktualisierung: 2026-06-12 (Session 18 — Mehrfach-Prozess-Aufräumung + Autostart-Diagnose · Aufräumung erledigt, dauerhafter Fix offen)*
 *Zu lesen am Anfang jeder Session — siehe `CLAUDE.md` Arbeitsregel 1.*
 
 ---
 
 ## Aktueller Stand
+
+**🔧 Session 18 (2026-06-12) — Mehrfach-Prozess-Aufräumung + Autostart-Diagnose. Aufräumung erledigt; dauerhafter Fix offen (Entscheidung beim User).**
+
+Nach PC-Reboot liefen **2× Hotkey + 4× Daemon** parallel (alle Session 2, User `df`, Pfad `%LocalAppData%\Programs\Speech2Text\`, gestartet ~08:00). Soll: **1 Tray + 1 Daemon**.
+
+**Diagnose-Ergebnis (kein Multi-User, kein Doppel-Autostart):**
+- Alle 6 Prozesse in **derselben Session (2) unter User `df`** → Terminal-Server-Multi-User-Effekt ausgeschlossen.
+- Autostart hat **genau einen** Eintrag: `%APPDATA%\…\Startup\Speech2Text.lnk` → `Speech2Text-Hotkey.exe`. Kein Registry-Run-Eintrag, kein Scheduled Task, kein Common-Startup.
+- PPID-Kette: `Hotkey 2776`→Child `13032` = **ein** Tray (PyInstaller-Onefile-Bootloader-Parent+Child). Tray-Child `13032` startete **zwei** Daemons: `13628`→`14440` (08:00:35, hält Port 17321) **und** `15192`→`14752` (08:00:45, konnte Port nicht binden, hängt nutzlos).
+- **Root Cause:** Race beim Kaltstart — die 37-MB-Daemon-Exe entpackt langsam, der erste Daemon lauscht beim nächsten Health-Poll noch nicht auf 17321, der Tray legt einen zweiten nach. `DAEMON_START_DEBOUNCE_S=2.0` greift nicht (Abstand 10 s > 2 s), und der Health-Re-Check vor `Popen` sieht den noch startenden ersten Daemon nicht als „up".
+
+**Aufräumung (erledigt):** Alle 6 Prozesse gekillt (Trays zuerst, sonst respawnt der Tray Daemons), Port 17321 frei, dann **einen** Tray frisch gestartet. **Befund dabei:** Der Neustart hat den Doppel-Daemon **reproduziert** (1 Tray → 2 Daemons, beide hielten 17321) → kein Reboot-Müll, sondern reproduzierbarer Startup-Race. Überzähliges Daemon-Paar manuell gekillt → **stabiler Endzustand: 1 Tray + 1 Daemon** (je Bootloader+Child-Paar), genau 1 Listener auf 17321 (PID 12292), `/health` grün, kein Respawn (>10 s beobachtet).
+
+**Root Cause (präzisiert):** Zwei sich verstärkende Punkte —
+1. **Startup-Race:** `DAEMON_START_DEBOUNCE_S=2.0` < Daemon-Kaltstart (~6 s Onefile-Entpacken der 37-MB-Exe). Der Tray legt im Fenster zwischen Debounce-Ablauf und Daemon-Ready einen zweiten Daemon nach.
+2. **`SO_REUSEADDR` (Python-`HTTPServer`-Default):** Auf Windows erlaubt das **zwei** erfolgreiche Binds auf 17321 → der zweite Race-Daemon stirbt NICHT mit „Address in use", sondern läuft weiter. Ohne diesen Punkt würde der Race sich selbst heilen.
+
+**Dauerhafter Fix — offen, Entscheidung beim User (NICHT umgesetzt):**
+- **(A) `SO_REUSEADDR=0` im Daemon** (`recorder.py`, `allow_reuse_address=False`) → harte Single-Instance über den Port; der zweite Daemon stirbt sauber. Robust, kleiner Eingriff. **Empfehlung.**
+- **(B) Adaptives Warmup** im Tray — vor dem zweiten Spawn länger/aktiv auf `/health` warten statt fester 2 s. Behebt nur Punkt 1.
+- **(C) Beide** (A+B) — Gürtel + Hosenträger.
+- Jeder Fix = `recorder.py`/`tray_app.py`-Änderung + Rebuild der betroffenen Exe + Deploy ins Bundle + ggf. Patch-Release.
+
+**Architektur-Hinweis (separat):** Port 17321 wäre auf einem Terminal-Server mit **mehreren gleichzeitig angemeldeten** Usern ein Kollisionsthema (127.0.0.1 ist maschinenweit, nicht je Session) — aktuell NICHT die Ursache (alles eine df-Session), aber als Risiko notiert, falls weitere User das Tool nutzen.
+
+**⚠️ Wiedereinstieg nach Reboot (User rebootet am 2026-06-12 nach dieser Session):** Der Doppel-Daemon ist NICHT codeseitig gefixt, nur die Laufzeit wurde aufgeräumt → nach dem Reboot stehen voraussichtlich wieder 1 Tray + 2 Daemons. Diktat funktioniert trotzdem (nur unsauber). **Erster Schritt nächste Session:** entweder Fix umsetzen — Empfehlung **A: `allow_reuse_address=False` im Daemon-`HTTPServer` (`recorder.py`)** + Rebuild der Daemon-Exe + Deploy ins Bundle + ggf. Patch-Release `v1.4.2` — oder bewusst belassen. Optional zusätzlich Tray-Warmup an reale Startzeit koppeln (Variante B). Memory: [[feedback_localhost_daemon_single_instance]].
+
+---
 
 **✅ Session 17 (2026-06-12) — ABGESCHLOSSEN: Bugfix „PortAudio-Stale-Device-Cache" (Watchdog-Reinit + Reinit beim Tastendruck).**
 
