@@ -32,7 +32,9 @@ from pathlib import Path
 # Kein .resolve() — siehe Memory feedback_path_resolve_unc_falle (I: ist
 # Substituted-Drive auf UNC; resolve() macht externe Tools unzugaenglich).
 PROJECT_ROOT = Path(__file__).parent.parent
-VERSION = "1.5.1"
+# Version aus der Single Source of Truth (src/version.py) — KEINE Kopie hier.
+sys.path.insert(0, str(PROJECT_ROOT / "src"))
+from version import VERSION  # noqa: E402
 DIST_NAME = f"Speech2Text-v{VERSION}"
 
 SRC_DIST = PROJECT_ROOT / "build" / "dist"

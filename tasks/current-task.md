@@ -37,7 +37,9 @@
 - 🔄 **(2) Rollout-Thema (in Arbeit) — User-Entscheidungen (2026-06-13): Pilot (2-5 MA), zentrale `%ProgramFiles%`-Installation, jeder eigener API-Key (Status quo).**
   - **API-Key:** kein Code (DPAPI-pro-User existiert; jeder trägt seinen Key im Settings-Fenster ein).
   - ✅ **Installation umgesetzt:** neue `install-admin.bat` (zentral → `%ProgramFiles%\Speech2Text`, Admin-Check, kein maschinenweiter taskkill) + `install-user.bat` (LNKs auf zentrale Exe, killt nur eigene Sitzung, startet App). `uninstall.bat` für beide Orte. `README.txt` Wege A/B. `build-distribution.py` + VERSION 1.5.0→1.5.1. **v1.5.1-ZIP gebaut + ZIP-Inhalt verifiziert** (install-admin/user.bat drin).
-  - ☐ **Offen:** (a) Test der zentralen Installation durch User (Admin: `install-admin.bat`, dann `install-user.bat`); (b) Commit der Deployment-Skripte; (c) ggf. GitHub-Release v1.5.1.
+  - ✅ **Zentrale Installation getestet (User, 2026-06-13):** läuft bei df aus `C:\Program Files\Speech2Text` (Prozesse verifiziert, `daemon.port`=27371, `/health` grün). Deployment committet (`cea422d`).
+  - ✅ **Versionsnummer in Settings-GUI** (User-Wunsch): neue `src/version.py` (Single Source), `settings.py` zeigt `v{VERSION}` in Titel + Footer, `build-distribution.py` nutzt `version.VERSION` (kein hardcoded mehr). Tests `tests/test_version.py` (3), Suite **114/114**. Settings-Exe + v1.5.1-ZIP neu gebaut.
+  - ☐ **Offen:** Commit (version.py/settings.py/build-distribution/test_version) → Tag `v1.5.1` + GitHub-Release; df: zentrale Settings-Exe per Admin aktualisieren, um die Version live zu sehen.
 
 **Lösungsweg (NICHT umgesetzt, nur skizziert — erst nach Test + Freigabe + Spec):** Port pro Session ableiten (`PORT = 17321 + SessionId` via `WTSGetActiveConsoleSessionId`/`ProcessIdToSessionId`), Daemon + Client identisch. Architektur-Änderung, eigenes Feature.
 

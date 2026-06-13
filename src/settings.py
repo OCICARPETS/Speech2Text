@@ -26,6 +26,7 @@ from tkinter import messagebox, ttk
 
 import config as cfg_mod
 import daemon_client as dc
+from version import VERSION
 from settings_helpers import (
     AUDIO_DEFAULT_LABEL, DIRTY_FG, ERROR_FG_BY_THEME, FONT_GROUP, FONT_HINT,
     GROUP_FG_BY_THEME, HELP_API_KEY, HELP_AUDIO, HELP_MODE_NAME,
@@ -51,7 +52,7 @@ class SettingsWindow:
     def __init__(self) -> None:
         self.cfg = cfg_mod.load_config()
         self.root = tk.Tk()
-        self.root.title("Speech2Text — Einstellungen")
+        self.root.title(f"Speech2Text — Einstellungen (v{VERSION})")
         initial_theme = self.cfg.get("theme", THEME_DEFAULT)
         if initial_theme not in THEME_CHOICES:
             initial_theme = THEME_DEFAULT
@@ -131,8 +132,9 @@ class SettingsWindow:
         # Footer mit fixer Position — auf kleinen Bildschirmen bleibt er sichtbar
         footer = ttk.Frame(self.root, padding=(PAD_X, PAD_Y, PAD_X, PAD_Y + 4))
         footer.pack(side="bottom", fill="x")
+        ttk.Label(footer, text=f"v{VERSION}", style="Hint.TLabel").pack(side="left")
         ttk.Label(footer, textvariable=self.status_var, style="Hint.TLabel").pack(
-            side="left",
+            side="left", padx=(10, 0),
         )
         ttk.Button(footer, text="Speichern & Schließen",
                    command=self._on_save_close).pack(side="right")
