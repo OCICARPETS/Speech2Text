@@ -115,7 +115,9 @@ Drei Ausprägungen von „Trennung pro Session" wurden unabhängig entworfen und
 
 ---
 
-## 8. Deployment (Folge-Thema, Empfehlung)
+## 8. Deployment (Folge-Thema)
+
+> **✅ UMGESETZT (2026-06-13, Option 2 zentral, → v1.5.1).** User-Wahl: Pilot (2-5 MA), zentrale Installation. Neue `scripts/dist-templates/install-admin.bat` (Programm → `%ProgramFiles%\Speech2Text`, Admin-Check via `net session`, KEIN maschinenweiter `taskkill`) + `install-user.bat` (Desktop-/Autostart-LNK auf die zentrale Exe, killt nur die eigene Sitzung, startet App). `uninstall.bat` deckt beide Install-Orte ab (zentral nur mit Admin). `README.txt` mit Wegen A (Einzelplatz) / B (Terminal-Server). `build-distribution.py` packt die neuen Skripte (verifiziert: im v1.5.1-ZIP enthalten). `install.bat` (per-User, Einzel-PC) bleibt abwärtskompatibel. **Offen: Test der zentralen Installation durch Admin (User) + ggf. GitHub-Release v1.5.1.**
 
 Heute: per-User-`install.bat` → `%LocalAppData%`. Bei ~30 Usern liegt die App 30× (je ~90 MB).
 **Empfohlen — Option 2:** Programm **einmal zentral** nach `%ProgramFiles%\Speech2Text` (read-only, einmalig Admin), pro User nur Autostart-LNK + Config in `%APPDATA%`. Updates an einer Stelle, Daten pro User getrennt. `install.bat` in Admin-Teil (Programm) + admin-freien User-Teil (LNK/Config) splitten; die maschinenweite `taskkill`-Logik entschärfen (darf keine Fremd-Session killen). Option 3 (GPO/Login-Script) nur bei Wunsch nach vollautomatischem, policy-gesteuertem Rollout.

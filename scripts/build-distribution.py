@@ -32,7 +32,7 @@ from pathlib import Path
 # Kein .resolve() — siehe Memory feedback_path_resolve_unc_falle (I: ist
 # Substituted-Drive auf UNC; resolve() macht externe Tools unzugaenglich).
 PROJECT_ROOT = Path(__file__).parent.parent
-VERSION = "1.5.0"
+VERSION = "1.5.1"
 DIST_NAME = f"Speech2Text-v{VERSION}"
 
 SRC_DIST = PROJECT_ROOT / "build" / "dist"
@@ -48,6 +48,8 @@ def main() -> int:
         SRC_DIST / "Speech2Text-Settings.exe",
         SRC_ASSETS / "speech2text.ico",
         TEMPLATES / "install.bat",
+        TEMPLATES / "install-admin.bat",
+        TEMPLATES / "install-user.bat",
         TEMPLATES / "uninstall.bat",
         TEMPLATES / "README.txt",
         TEMPLATES / "LIZENZEN.txt",
@@ -82,6 +84,8 @@ def main() -> int:
     shutil.copy2(SRC_ASSETS / "speech2text.ico", staging / "assets")
     print("Kopiere Templates ...")
     shutil.copy2(TEMPLATES / "install.bat", staging)
+    shutil.copy2(TEMPLATES / "install-admin.bat", staging)
+    shutil.copy2(TEMPLATES / "install-user.bat", staging)
     shutil.copy2(TEMPLATES / "uninstall.bat", staging)
     shutil.copy2(TEMPLATES / "README.txt", staging)
     shutil.copy2(TEMPLATES / "LIZENZEN.txt", staging)

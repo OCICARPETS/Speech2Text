@@ -10,10 +10,21 @@ direkt ins aktive Fenster eingefuegt (Outlook, Word, CRM, Browser, ...).
 
 Installation:
 -------------
-1. install.bat doppelklicken
-2. Eventuell UAC-Dialog bestaetigen (nur bei Autostart-Eintrag)
-3. Frage "Bei Windows-Anmeldung automatisch starten?" beantworten
-4. Nach Abschluss: Doppelklick auf "Speech2Text" auf dem Desktop
+
+A) Einzelplatz-PC (ein Nutzer):
+   1. install.bat doppelklicken
+   2. Frage "Bei Windows-Anmeldung automatisch starten?" beantworten
+   3. Nach Abschluss: Doppelklick auf "Speech2Text" auf dem Desktop
+
+B) Terminal-Server (mehrere Nutzer gleichzeitig angemeldet):
+   1. EINMAL durch den Administrator: install-admin.bat als Administrator
+      ausfuehren (Rechtsklick - "Als Administrator ausfuehren"). Kopiert das
+      Programm zentral nach %ProgramFiles%\Speech2Text.
+   2. Pro Mitarbeiter (OHNE Admin): install-user.bat ausfuehren - legt
+      Desktop- + Autostart-Verknuepfung an und startet die App.
+   Jede angemeldete RDP-Sitzung bekommt ihren EIGENEN Daemon (eigener Port,
+   eigenes Mikrofon, eigene Config + eigener API-Key) - kein Konflikt und
+   keine Vermischung zwischen den Nutzern.
 
 
 Wichtig - SmartScreen-Hinweis beim ersten Start:
@@ -137,5 +148,8 @@ Fehlersuche:
 
 Versionshinweise / Updates:
 ---------------------------
-Neuere Version: install.bat erneut ausfuehren - ueberschreibt
-das Programm-Verzeichnis. Konfiguration bleibt erhalten.
+- Einzelplatz: install.bat erneut ausfuehren - ueberschreibt das
+  Programm-Verzeichnis. Konfiguration bleibt erhalten.
+- Terminal-Server: install-admin.bat als Administrator erneut ausfuehren.
+  WICHTIG: vorher sicherstellen, dass niemand das Tool aktiv nutzt (die zentrale
+  Exe ist sonst gesperrt). Die per-User-Verknuepfungen bleiben gueltig.
