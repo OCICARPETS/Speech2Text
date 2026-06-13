@@ -1,7 +1,25 @@
 # Current Task — Speech2Text
 
-*Letzte Aktualisierung: 2026-06-13 (Session 20 — Multi-User-Terminal-Server-Verifikation. Session 19 abgeschlossen: Live-Mic-Test bestanden + Fix A als installiert verifiziert.)*
+*Letzte Aktualisierung: 2026-06-13 (Session 20 — Multi-User/Terminal-Server: analysiert → gebaut → live bewiesen → v1.5.0 + v1.5.1 released → zentrale Installation + Pilot-Anleitung. ABGESCHLOSSEN.)*
 *Zu lesen am Anfang jeder Session — siehe `CLAUDE.md` Arbeitsregel 1.*
+
+---
+
+## 🏁 Session 20 — Abschluss (2026-06-13)
+
+**Heute gemacht:**
+1. Mic-Test bestanden (lange Diktate voll, kein Audio-Verlust); Fix A als installiert verifiziert (Hash `59F74DC0`).
+2. Multi-User-Problem analysiert (8-Agenten-Workflow, 3× adversarial bestätigt) + per 2-Session-Test real belegt (Cross-Session-Leak: `administrator`-Sitzung erreichte df's Daemon auf 17321).
+3. Lösung **Ansatz B** (Port 0 + per-User-`daemon.port` + Named-Mutex-Single-Instance) spezifiziert (Design-Panel), freigegeben, **TDD-implementiert** (4 Module + `version.py`, **114 Tests grün**), deployt (harter Cut), **live bewiesen** (Leak geschlossen, 17321 aus Fremd-Sitzung unerreichbar).
+4. **v1.5.0** released. **Zentrale Terminal-Server-Installation** (`install-admin.bat`/`install-user.bat`) gebaut + getestet (läuft bei df aus `%ProgramFiles%`). **Versionsanzeige** in Settings (Titel+Footer, `version.py` Single-Source). **v1.5.1** released. **Pilot-Anleitung** für Kollegen erstellt.
+
+**Letzte Commits (master, alle gepusht):** `60bee8c` Versionsanzeige · `cea422d` zentrale Installation+v1.5.1-Bump · `f2801dc` v1.5.0-Bump · `50485cf` Multi-User-Doku · `3e0c517` Multi-User-Code (+ Doku-Commit Pilot-Anleitung). **Releases v1.5.0 + v1.5.1 live auf GitHub.**
+
+**Offene Punkte (nächste Session / lokal bei df):**
+- Lokal: zentrale Settings-Exe in `%ProgramFiles%` auf v1.5.1 aktualisieren (Versionsanzeige produktiv sichtbar); alte per-User-Installation in `%LocalAppData%\Programs\Speech2Text` aufräumen.
+- **Pilot starten:** `PILOT-ANLEITUNG.md` an 2-5 Kollegen, eigene OpenAI-API-Keys verteilen.
+- Später (Spec §9): API-Key-/Kosten-Strategie skalieren (OCI-Proxy/Gateway), wenn >5-10 Dauernutzer.
+- Optional-Politur (💡): `DAEMON_BOOT_TIMEOUT_S` (8 s) knapp für Onefile-Kaltstart; bestehende `ResourceWarning` im 500-Mock-Test.
 
 ---
 
@@ -39,7 +57,8 @@
   - ✅ **Installation umgesetzt:** neue `install-admin.bat` (zentral → `%ProgramFiles%\Speech2Text`, Admin-Check, kein maschinenweiter taskkill) + `install-user.bat` (LNKs auf zentrale Exe, killt nur eigene Sitzung, startet App). `uninstall.bat` für beide Orte. `README.txt` Wege A/B. `build-distribution.py` + VERSION 1.5.0→1.5.1. **v1.5.1-ZIP gebaut + ZIP-Inhalt verifiziert** (install-admin/user.bat drin).
   - ✅ **Zentrale Installation getestet (User, 2026-06-13):** läuft bei df aus `C:\Program Files\Speech2Text` (Prozesse verifiziert, `daemon.port`=27371, `/health` grün). Deployment committet (`cea422d`).
   - ✅ **Versionsnummer in Settings-GUI** (User-Wunsch): neue `src/version.py` (Single Source), `settings.py` zeigt `v{VERSION}` in Titel + Footer, `build-distribution.py` nutzt `version.VERSION` (kein hardcoded mehr). Tests `tests/test_version.py` (3), Suite **114/114**. Settings-Exe + v1.5.1-ZIP neu gebaut.
-  - ☐ **Offen:** Commit (version.py/settings.py/build-distribution/test_version) → Tag `v1.5.1` + GitHub-Release; df: zentrale Settings-Exe per Admin aktualisieren, um die Version live zu sehen.
+  - ✅ **v1.5.1-Release LIVE:** Commit `60bee8c`, Settings-Exe-Smoke OK (version.py gebündelt, kein Crash), Tag `v1.5.1`, ZIP `Speech2Text-v1.5.1.zip`, GitHub-Release <https://github.com/OCICARPETS/Speech2Text/releases/tag/v1.5.1>. master 0 ahead.
+  - ☐ **Nur noch lokal bei df (optional):** zentrale Settings-Exe in `%ProgramFiles%` auf v1.5.1 aktualisieren, um die Versionsanzeige produktiv zu sehen (laufende Instanz beenden → `install-admin.bat` als Admin → `install-user.bat`). Schneller Vorab-Check ohne Deploy: `build\dist\Speech2Text-Settings.exe` doppelklicken. Alte per-User-Installation in `%LocalAppData%\Programs\Speech2Text` kann entfernt werden (verwaist).
 
 **Lösungsweg (NICHT umgesetzt, nur skizziert — erst nach Test + Freigabe + Spec):** Port pro Session ableiten (`PORT = 17321 + SessionId` via `WTSGetActiveConsoleSessionId`/`ProcessIdToSessionId`), Daemon + Client identisch. Architektur-Änderung, eigenes Feature.
 
