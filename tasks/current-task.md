@@ -1,11 +1,42 @@
 # Current Task — Speech2Text
 
-*Letzte Aktualisierung: 2026-06-12 (Session 19 — Diktat-Qualität: Doppel-Daemon-Fix + Clean-Dictation-Prompt · Code+Tests+Deploy erledigt, Live-Mic-Test offen beim User)*
+*Letzte Aktualisierung: 2026-06-13 (Session 20 — Multi-User-Terminal-Server-Verifikation. Session 19 abgeschlossen: Live-Mic-Test bestanden + Fix A als installiert verifiziert.)*
 *Zu lesen am Anfang jeder Session — siehe `CLAUDE.md` Arbeitsregel 1.*
 
 ---
 
-## Aktueller Scope (Session 19, 2026-06-12) — vom User beauftragt
+## Aktueller Scope (Session 20, 2026-06-13) — vom User beauftragt
+
+**Auftrag (User):** Speech2Text soll weiteren OCI-Mitarbeitern auf dem Terminal-Server bereitgestellt werden. Vor dem Rollout: **real verifizieren**, ob Mehrbenutzerbetrieb kollidiert. User-Wahl der 3 Optionen: **„Erst real mit 2 Sessions testen"** — bevor etwas Multi-User-fähig gebaut wird.
+
+**Code-Analyse (abgeschlossen, Workflow 8 Agenten, 3× adversarial bestätigt):** Daemon bindet maschinenweiten Port `127.0.0.1:17321` (`recorder.py:42-43`), keine Session-Ableitung. Fix A (`allow_reuse_address=False`) macht das zur harten Single-Instance → nur der ZUERST gestartete Daemon (egal welche Session) bekommt den Port; jeder weitere stirbt am Bind (Exit 3). Schlimmer: Tray des Zweit-Users adoptiert via `/health` den fremden Daemon (keine Auth, `tray_app.py:247`) → Hotkey-Druck nimmt fremdes Mikro auf, Text landet in fremder Zwischenablage/Fenster (`recorder.py:289-295, 767, 841`) = **Cross-Session-Leak (Datenschutz)**. Config/Hotkeys/Modes/Key sind zwar pro-User getrennt (`%APPDATA%`, DPAPI user-gebunden), greifen zur Laufzeit aber nicht, solange der Tray den fremden Daemon nutzt.
+
+**Test-Scope:**
+1. ✅ **Zweit-Daemon-Bind in gleicher Session** (2026-06-13): Zweit-Daemon stirbt am Bind mit **Exit 3** (`WinError 10048`), Listener unverändert (PID 22008), Mikro NICHT angefasst (Bind-Gate wirkt). daemon.log: „❌ Port 17321 bereits belegt". → maschinenweite Single-Instance bestätigt.
+2. ✅ **Stufe A — sitzungsübergreifende Erreichbarkeit** (2026-06-13): Aus `administrator`-Sitzung (eigene Windows-Session, KEINE eigene Speech2Text-Installation) liefert `Invoke-RestMethod http://127.0.0.1:17321/health` **df's Daemon** (`mode=clean_dictation`, `prebuffer=on`, `audio_age=0.0`, `cycle_loop_size=3`). → Loopback-Port ist sitzungsübergreifend erreichbar, ohne Auth, ohne eigene App. **Leak-Voraussetzung praktisch belegt.**
+3. ☐ Stufe B (optional, sichtbarer Voll-Beweis): `/start` aus `administrator`-Sitzung → df's Mikro nimmt auf, Text landet in df's Fenster. Beweiskette ist auch ohne Stufe B bereits geschlossen.
+
+**Fazit (belegt):** Multi-User auf dem Terminal-Server ist in jetziger Form **kaputt UND ein Datenschutz-Leak**. → **User-Wahl (2026-06-13): Lösung spezifizieren (Port-pro-Session).**
+
+**Phase: SPEZIFIKATION freigegeben (Ansatz B, User-Wahl 2026-06-13). Aktuell: Implementierung B (TDD) — KEIN Token (C später).** Spec: `Projektplanung/08_Multi-User-Terminal-Server/SPEZIFIKATION.md`. Design-Panel (3 Ansätze + Judge): **Empfehlung Ansatz B** (Daemon bindet Port **0** = OS wählt freien Port + Port-Handshake-Datei in per-User-`%APPDATA%\Speech2Text\daemon.port`; Tray liest sie → jede Session eigener Daemon, kein Cross-Session-Leak). Scores B 7.3 / C 6.3 / A 5.9. A (SessionId-Port) verworfen (Terminal-Server-SessionIds zu groß/nicht dicht); C (B+Token) als optionale spätere Härtung (gegen *absichtlichen* Fremdzugriff, für interne Nutzer unnötig). **Kern-Risiko (R1):** Single-Instance-Schutz von `allow_reuse_address=False` auf **Lockdatei + PID-Liveness** umbauen — Session-19-Garantie (F4, kein Doppel-Daemon) darf nicht regredieren. Deployment (Option 2: zentral `%ProgramFiles%`) + API-Key (Option A jetzt / OCI-Proxy später) als Folge-Themen. **KEIN Code bis Freigabe.** Offene User-Entscheidungen (später): Deployment; API-Key; `%APPDATA%`-Lokalität prüfen.
+
+**Implementierungs-Schritte (TDD, Spec §7):**
+1. ✅ `src/handshake.py` + Tests (`tests/test_handshake.py`, 13/13 grün): port_file_path/write_port/read_port/clear_port_file (atomar), is_pid_alive (OpenProcess+WaitForSingleObject gegen Stale/PID-Reuse), resolve_daemon_url (Datei → URL, Fallback default-port).
+2. ✅ `recorder.py` (Tests `tests/test_recorder_single_instance.py` umgeschrieben, 5/5 grün; `py_compile` OK): Bind Port 0 + `handshake.write_port`; Single-Instance via **Named Mutex `Local\Speech2Text-Daemon`** (User-Wahl statt Lockdatei — atomar, session-isoliert, crash-sicher); `clear_port_file` in `/shutdown` (vor `os._exit`) + `finally`.
+3. ✅ `daemon_client.py` (Tests `tests/test_daemon_client.py` umgestellt auf ENV-Hebel + neue `TestDaemonUrlResolution`, 13/13 grün): `DAEMON_URL`-Konstante→`daemon_url()` (ENV-Override zuerst, sonst `handshake.resolve_daemon_url`), `_request` pro Call auflösend, `is_custom_url` auf ENV-Check.
+4. ✅ `tray_app.py` (Tests `tests/test_tray_app.py` +`TestStalePortFileCleanup`, 11/11 grün): `dc.DAEMON_URL`→`dc.daemon_url()` (Z.249); neue `_maybe_clear_stale_port_file()` + Aufruf im Poll-Loop vor Daemon-Restart (räumt verwaiste `daemon.port` mit totem PID weg).
+5. ✅ **Volle Suite 111/111 grün** + `py_compile` OK. Daemon-Exe (37,13 MB) + Tray-Exe (30,42 MB) gebaut. **Smoke-Test der Frozen-Daemon-Exe PERFEKT:** Port 0 → freier Port 64149, `daemon.port` geschrieben (`port=64149/pid=64148`), `/health` OK (`prebuffer=on`, `mode=clean_dictation`), 1 Listener; zweite Exe → **Exit 3** (Mutex belegt, kein Doppel-Daemon); `/shutdown` räumt `daemon.port`. handshake im Bundle bestätigt.
+6. 🔄 **Deploy (harter Cut, R4) ERLEDIGT (2026-06-13):** alte Trays+Daemons beendet (17321 frei), alle 3 neuen Exes ins Bundle (`%LocalAppData%\Programs\Speech2Text\`), neuer Tray gestartet. **Verifiziert:** 1 Daemon (Bootloader-Kette), `daemon.port` = `port=7993/pid=71164`, `/health` OK, **Port 17321 = 0 Listener** (maschinenweiter Port weg), Hotkeys gebunden (`main='CapsLock'`). Kosmetik: erster `wait_alive` lief in 8-s-Timeout (Onefile-Kaltstart), Poll-Loop fing es auf — **trotzdem nur 1 Daemon dank Mutex**. ☐ **Live-Test beim User offen:** (a) Diktat-Funktionstest, (b) administrator-Gegenbeweis (17321 muss jetzt unerreichbar sein). Danach **NICHT committet** → `/feature-done`.
+
+**💡 Politur für später (nicht jetzt):** `DAEMON_BOOT_TIMEOUT_S` (8 s) knapp für Onefile-Kaltstart; ggf. erhöhen oder `wait_alive` erst auf `daemon.port`-Existenz warten lassen. + bestehende `ResourceWarning` im 500-Mock-Test (`test_daemon_client`).
+
+**Stand: Code fertig + getestet + gebaut + Smoke-verifiziert. Offen: Deploy + 2-Session-Live-Test, dann /feature-done (Commit + SPEZIFIKATION-Historie + ggf. v1.5.0-Release).**
+
+**Lösungsweg (NICHT umgesetzt, nur skizziert — erst nach Test + Freigabe + Spec):** Port pro Session ableiten (`PORT = 17321 + SessionId` via `WTSGetActiveConsoleSessionId`/`ProcessIdToSessionId`), Daemon + Client identisch. Architektur-Änderung, eigenes Feature.
+
+---
+
+## Stand Session 19 (2026-06-12, abgeschlossen) — Diktat-Qualität
 
 **Auftrag (User, autonom, „ich muss weg"):** „Spracheingabe funktioniert seit dem letzten Update nicht mehr gut. Funktionieren Pre-Roll/Post-Roll richtig? Clean-Dictation-Mode kürzt/verschluckt relativ viel — woran liegt das, ggf. Prompt verbessern. Vorher Stand in GitHub sichern, dann Verbesserungen möglichst selbständig durchführen, iterieren."
 
@@ -30,7 +61,7 @@
 
 **Sicherung:** master war clean + auf origin (Baseline `db1f3ad`) → GitHub-Stand gesichert, Rollback-Punkt vorhanden. Session-19-Fixes + Release danach committet+gepusht.
 
-**⚠️ OFFEN — Live-Mic-Test beim User (Pflicht-Gegenprobe):** Der echte Diktat-Test war hier **nicht** möglich — aktuell **kein Mikrofon** (`default input -1`, User hatte RDP getrennt; daher zeigt `/health` korrekt `prebuffer=off / stream_recovering=on`). Beim nächsten RDP-Reconnect heilt der Watchdog (Session-17-Reinit) den Stream → `prebuffer=on`. **User bitte testen:** (1) ein paar längere Diktate → kommt jetzt der volle Text an (keine 24 s→30 Zeichen mehr)? (2) Clean-Dictation: bleibt mehr Inhalt erhalten? Wenn weiterhin Audio-Verlust trotz **nur 1 Daemon** → dann liegt ein echter RDP-Mic-Drop vor (separate Spur), nicht mehr die Contention.
+**✅ ERLEDIGT — Live-Mic-Test bestanden (2026-06-13):** Objektiv aus `daemon.log` belegt: lange Diktate kommen voll durch (44,6 s→712 Zeichen ~16 Z/s, 36,9 s→839 Zeichen ~23 Z/s, 13,2 s→175 Zeichen) — kein `24 s→30 Zeichen`-Symptom mehr. Clean-Dictation kürzt nur −5…−13 % (Ziel erreicht, Inhalt bleibt). `/health` live: `prebuffer=on`, `audio_age=0.0`, `stream_recovering=off`. **Doppel-Daemon-Entwarnung:** Fix A ist installiert (Daemon-Exe SHA256 `59F74DC0…` = dokumentierter Fix-Build) UND wirkt — die im Task-Manager sichtbaren „2 Daemons" sind die PyInstaller-Onefile-Bootloader-Kette (PPID linear `30580→15180→61788→22008`), nur **1 echter Listener** auf 17321 (PID 22008). Kein echter Doppel-Daemon mehr (korrigiert die frühere „nach Reboot wieder 2 Daemons"-Befürchtung). Vereinzelte „verbinde neu"/`input overflow` bleiben (Watchdog heilt), die langen Diktate überleben sie.
 
 **Hinweis Nicht-im-Scope (eingehalten):** Pre-/Post-Roll-**Logik** ist korrekt und wurde NICHT geändert (User-Config 500/350 ms greift, Log zeigt `+494 ms Pre-Roll`). Kein Caps-Lock-Touch, kein Modellwechsel, kein Release-Bump (Entscheidung beim User — siehe 💡 unten).
 

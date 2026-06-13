@@ -73,7 +73,9 @@ Diese Regeln gelten für **jede Session**, **jeden Tool-Call**. Sie überschreib
 | **Auto-Paste** | `pyautogui` (Ctrl+V) | Einfügen ins zuletzt aktive Fenster |
 | **Konfiguration** | `python-dotenv` | `.env` → `OPENAI_API_KEY` |
 
-**Architekturprinzip:** Python läuft als **persistenter Daemon** (kein Start pro Tastendruck). AHK feuert nur leichtgewichtige HTTP-Pings an `localhost:17321/start` und `/stop`. Grund: Python-Import-Zeit ist zu hoch für Push-to-Talk; außerdem bleibt der OpenAI-Client + sounddevice-Stream warm.
+**Architekturprinzip:** Python läuft als **persistenter Daemon** (kein Start pro Tastendruck). Der Tray feuert nur leichtgewichtige HTTP-Pings an `localhost:<Session-Port>/start` und `/stop`. Grund: Python-Import-Zeit ist zu hoch für Push-to-Talk; außerdem bleibt der OpenAI-Client + sounddevice-Stream warm.
+
+**Multi-Session (Ansatz B, 2026-06):** Kein fester Port mehr. Der Daemon bindet **Port 0** (OS wählt einen freien Port) und hinterlegt ihn in der per-User-Datei `%APPDATA%\Speech2Text\daemon.port` (`src/handshake.py`); Tray/Client lesen ihn via `daemon_client.daemon_url()`. Single-Instance **pro Windows-Session** über den Named Mutex `Local\Speech2Text-Daemon` (nicht mehr über den Port-Bind). So bekommt jede gleichzeitig angemeldete RDP-Sitzung ihren eigenen Daemon — kein maschinenweiter Port, kein Cross-Session-Leak. Details: `Projektplanung/08_Multi-User-Terminal-Server/`.
 
 ---
 

@@ -17,6 +17,7 @@
 | `04_Text-Ausgabe` | `pyperclip` + `pyautogui` (Ctrl+V) ins aktive Fenster | 1 | ✅ MVP |
 | `05_Einstellungsmenue` | tkinter-GUI für per-User Config (API-Key DPAPI, Tonalität, Paste-Modus, Hotkey, Sprache) | 2 | 🔜 |
 | `06_Installer` | PyInstaller + Ahk2Exe + Inno Setup → `Speech2Text-Setup.exe` für andere OCI-PCs | 2 | 🔜 |
+| `08_Multi-User-Terminal-Server` | Multi-Session: Port-pro-Session (Port 0 + per-User-`daemon.port`) + Named-Mutex-Single-Instance — schließt den Cross-Session-Leak (maschinenweiter Port 17321) | 2 | ✅ Fertig (2026-06) |
 
 Für den **Tagesstand** und laufende Arbeit siehe `tasks/current-task.md`.
 
@@ -81,6 +82,7 @@ Für den **Tagesstand** und laufende Arbeit siehe `tasks/current-task.md`.
 - [x] **`/shutdown`-Endpoint + Hard-Exit** — `os._exit(0)` wegen sounddevice/openai Non-Daemon-Threads
 - [x] **Mode-Switch-Toast (Custom-Popup)** — eigenes Tk-Toast unten rechts statt pystray-System-Toast: 1,5 s, Coalesce/Timer-Reset, theme-aware, alle Tray-Meldungen darüber (`src/toast.py`, v1.4 2026-06-05). Details `01_Hotkey-Trigger/SPEZIFIKATION.md` §7c.
 - [x] **Ad-hoc Mode-Umbenennung in der Liste** — Modus-Dropdown aktualisiert sich bei Anwenden/Speichern (`_refresh_mode_list` in `src/settings.py`, v1.4 2026-06-05). Details `05_Einstellungsmenue/SPEZIFIKATION.md` §8.
+- [x] **Multi-User / Terminal-Server-Tauglichkeit** — Port-pro-Session (Daemon bindet Port 0, hinterlegt ihn in per-User-`daemon.port`), Single-Instance via Named Mutex `Local\…`; behebt den maschinenweiten Port-17321-Cross-Session-Leak (Ansatz B, 2026-06-13). Details `08_Multi-User-Terminal-Server/SPEZIFIKATION.md`.
 - [ ] **Kontext-bewusste Optimierung** — pro Fenstertitel anderer Prompt-Hint (Prio 3)
 - [ ] **Diktat-Historie** — letzte 20 Diktate lokal (opt-in, verschlüsselt) (Prio 3)
 - [ ] **Transfer in AussendienstAPP** — Sprachnotiz-Feature am iPhone-Browser (eigenes Projekt, Prio 3)
