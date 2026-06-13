@@ -36,11 +36,14 @@ from dotenv import load_dotenv
 from openai import OpenAI
 
 import config as cfg_mod
+import handshake
 
 # --- Konfiguration ----------------------------------------------------------
 
 HOST = "127.0.0.1"
-PORT = 17321
+# Der Daemon bindet Port 0 (OS wählt einen freien, session-exklusiven Port) und
+# hinterlegt ihn via handshake.write_port; der Tray liest ihn dort. Kein fester
+# Port mehr (Multi-Session, Ansatz B). Fallback-Port: handshake.DEFAULT_PORT.
 
 SAMPLE_RATE = 16000   # Hz — ausreichend für Sprache, minimiert Upload
 CHANNELS = 1          # Mono
@@ -916,6 +919,7 @@ class Handler(BaseHTTPRequestHandler):
             # Clipboard gehört dem OS, kein offener File-Handle außer Log.
             def hard_exit():
                 time.sleep(0.15)  # Response-Bytes rauslassen
+                handshake.clear_port_file()  # Discovery-Datei aufräumen vor Hard-Exit
                 os._exit(0)
             threading.Thread(target=hard_exit, daemon=True).start()
         else:
@@ -1001,23 +1005,52 @@ def _setup_hidden_logging() -> Path:
 
 # --- Entry-Point ------------------------------------------------------------
 
+# Single-Instance pro Windows-Session über einen Named Mutex. Bei Port 0 (OS
+# wählt freien Port, Multi-Session-Adressierung via handshake.py) ist der Bind
+# kein Lock mehr. Der „Local\\"-Namespace ist je RDP-Session eigen → genau ein
+# Daemon pro Session; das OS gibt den Mutex bei Prozess-Ende frei (auch bei
+# os._exit) → kein Stale-Lock. Ersetzt den allow_reuse_address-Schutz (Session 19),
+# der nur bei festem Port wirkte.
+MUTEX_NAME = "Local\\Speech2Text-Daemon"
+
+_k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+_k32.CreateMutexW.restype = wintypes.HANDLE
+_k32.CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
+_k32.CloseHandle.restype = wintypes.BOOL
+_k32.CloseHandle.argtypes = [wintypes.HANDLE]
+_ERROR_ALREADY_EXISTS = 183
+
+
+def _acquire_single_instance_lock(name: str = MUTEX_NAME):
+    """Erwirbt den Session-lokalen Single-Instance-Mutex. Returnt das Handle
+    (für die Daemon-Lebensdauer offen halten) oder None, wenn in dieser Session
+    bereits ein Daemon läuft."""
+    handle = _k32.CreateMutexW(None, False, name)
+    err = ctypes.get_last_error()
+    if not handle:
+        return None
+    if err == _ERROR_ALREADY_EXISTS:
+        _k32.CloseHandle(handle)
+        return None
+    return handle
+
+
+def _release_single_instance_lock(handle) -> None:
+    """Gibt den Mutex frei (Daemon beendet). None-sicher."""
+    if handle:
+        _k32.CloseHandle(handle)
+
+
 class _SingleInstanceHTTPServer(ThreadingHTTPServer):
-    """ThreadingHTTPServer mit allow_reuse_address=False → harte Single-Instance.
+    """ThreadingHTTPServer für den Daemon (Bind auf Port 0).
 
-    `http.server.HTTPServer` setzt allow_reuse_address=1. Auf Windows erlaubt
-    SO_REUSEADDR ZWEI erfolgreiche Binds auf denselben Port — ein im Startup-
-    Race (Tray-Debounce 2 s < Daemon-Kaltstart ~6 s Onefile-Entpacken) doppelt
-    gespawnter Daemon stirbt dann NICHT mit „Address in use", sondern läuft
-    weiter und öffnet parallel das Mikrofon (Prebuffer-Stream) → zwei Streams
-    auf demselben WASAPI-Gerät → Contention → der Stream wird ständig stale →
-    der Self-Healing-Watchdog feuert im Dauerlauf, und einzelne Diktate liefern
-    fast nichts (Session 19: 24 s Audio → 30 Zeichen, mehrfach 0 Zeichen/s).
-
-    Mit allow_reuse_address=False scheitert der zweite Bind sauber; der
-    Zweit-Daemon beendet sich — und zwar (siehe main(): Bind VOR Recorder-Init)
-    BEVOR er das Mikrofon je anfasst. So hält genau ein Daemon das Mikrofon.
+    Der Single-Instance-Schutz läuft seit Multi-User (Ansatz B) NICHT mehr über
+    den Port-Bind: Bei Port 0 wählt das OS je Start einen anderen freien Port,
+    ein zweiter Bind gelingt also immer. Genau ein Daemon je Windows-Session
+    garantiert stattdessen der Session-lokale Named Mutex in main()
+    (_acquire_single_instance_lock). ThreadingHTTPServer: jede Request landet in
+    einem eigenen Thread → /start und /stop warten nicht hinter /health-Polls.
     """
-    allow_reuse_address = False
 
 
 def main() -> int:
@@ -1057,23 +1090,35 @@ def main() -> int:
         )
         return 2
 
-    # Single-Instance-Gate: Port ZUERST binden — BEVOR Recorder und Mikrofon
-    # initialisiert werden. Ein im Startup-Race doppelt gestarteter Daemon
-    # scheitert hier am Bind (allow_reuse_address=False) und beendet sich,
-    # OHNE je das Mikrofon zu belegen → kein zweiter Mic-Stream, keine
-    # WASAPI-Contention, kein Watchdog-Dauerlauf (Session-19-Fix).
-    # ThreadingHTTPServer: jede Request landet in einem eigenen Thread —
-    # verhindert, dass /start oder /stop hinter laufenden /health-Polls warten
-    # muss. Recorder-State ist mit self._lock geschützt → thread-safe.
-    try:
-        server = _SingleInstanceHTTPServer((HOST, PORT), Handler)
-    except OSError as e:
-        print(f"❌  Port {PORT} bereits belegt — es läuft schon ein Daemon. "
-              f"Beende diese Instanz.", file=sys.stderr)
-        print(f"    ({type(e).__name__}: {e})", file=sys.stderr)
+    # Single-Instance-Gate: Session-lokaler Named Mutex ZUERST — BEVOR Recorder
+    # und Mikrofon initialisiert werden. Bei Port 0 ist der Bind kein Lock mehr
+    # (jeder Daemon bekommt einen anderen freien Port); der Mutex (Local\ = pro
+    # RDP-Session) lässt genau einen Daemon je Session zu und wird vom OS bei
+    # Prozess-Ende freigegeben (kein Stale). So bleibt Doppel-Daemon/Mic-
+    # Contention (Session 18/19) verhindert, ohne je das Mikrofon zu belegen.
+    instance_lock = _acquire_single_instance_lock()
+    if instance_lock is None:
+        print("❌  Es läuft schon ein Daemon in dieser Sitzung. "
+              "Beende diese Instanz.", file=sys.stderr)
         return 3
 
-    # Erst NACH erfolgreichem Port-Bind das Mikrofon + den Recorder öffnen.
+    # Port 0 binden — das OS wählt einen freien, session-exklusiven Port.
+    # ThreadingHTTPServer: jede Request in eigenem Thread → /start//stop warten
+    # nicht hinter /health-Polls. Recorder-State ist mit self._lock thread-safe.
+    try:
+        server = _SingleInstanceHTTPServer((HOST, 0), Handler)
+    except OSError as e:
+        print(f"❌  Konnte keinen Port binden ({type(e).__name__}: {e}). "
+              "Beende diese Instanz.", file=sys.stderr)
+        _release_single_instance_lock(instance_lock)
+        return 3
+    actual_port = server.server_address[1]
+
+    # Port in die per-User-Handshake-Datei schreiben, damit der Tray (gleiche
+    # Session, gleiches %APPDATA%) den Daemon findet. handshake.py = Single Source.
+    handshake.write_port(actual_port, os.getpid())
+
+    # Erst NACH erfolgreichem Bind das Mikrofon + den Recorder öffnen.
     recorder = Recorder(app_config, api_key)
     Handler.recorder = recorder
 
@@ -1088,7 +1133,8 @@ def main() -> int:
             pass
     threading.Thread(target=_warmup, daemon=True).start()
 
-    print(f"Speech2Text Daemon läuft auf http://{HOST}:{PORT}")
+    print(f"Speech2Text Daemon läuft auf http://{HOST}:{actual_port} "
+          f"(PID {os.getpid()} — Session-Port via handshake.py)")
     print(f"  Config:     {cfg_mod.config_path()}")
     print(f"  Modus:      {app_config.get('mode', cfg_mod.DEFAULT_MODE)}")
     print("  Endpoints:  POST /start · /stop · /cycle · /pause-hotkeys · /resume-hotkeys · /reload-config · /shutdown · GET /health · /hotkeys")
@@ -1103,6 +1149,9 @@ def main() -> int:
     except KeyboardInterrupt:
         print("\nBeende Daemon…")
         server.shutdown()
+    finally:
+        handshake.clear_port_file()
+        _release_single_instance_lock(instance_lock)
     return 0
 
 

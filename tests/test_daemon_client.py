@@ -1,10 +1,17 @@
 """Tests für daemon_client gegen einen Mock-HTTP-Server.
 
-Aufruf: `.venv/Scripts/python.exe -m unittest tests.test_daemon_client -v`
+Seit Multi-User (Ansatz B) hat daemon_client KEINE feste DAEMON_URL-Konstante
+mehr: die Daemon-URL wird pro Request aufgelöst (daemon_url()) — ENV-Override
+S2T_DAEMON_URL zuerst, sonst aus der per-User-Handshake-Datei. Die Tests lenken
+den Client deshalb über den ENV-Override auf den Mock-Port.
+
+Aufruf: .venv/Scripts/python.exe -m unittest tests.test_daemon_client -v
 """
 from __future__ import annotations
 
+import os
 import sys
+import tempfile
 import threading
 import time
 import unittest
@@ -16,6 +23,7 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 import daemon_client as dc  # noqa: E402
+import handshake  # noqa: E402
 
 
 # --- Mock-Server -----------------------------------------------------------
@@ -64,7 +72,8 @@ class _MockHandler(BaseHTTPRequestHandler):
 
 
 class MockDaemon:
-    """Startet/stoppt einen Mock-HTTP-Server auf Port 17321 für den Testlauf."""
+    """Startet/stoppt einen Mock-HTTP-Server und lenkt den Client per
+    S2T_DAEMON_URL-Override darauf."""
 
     def __init__(self, port: int = 17321):
         self.port = port
@@ -72,19 +81,18 @@ class MockDaemon:
         self.thread: threading.Thread | None = None
 
     def __enter__(self):
-        # Daemon-URL des Clients auf unseren Mock-Port umlenken
-        dc.DAEMON_URL = f"http://127.0.0.1:{self.port}"
+        os.environ["S2T_DAEMON_URL"] = f"http://127.0.0.1:{self.port}"
         _MockHandler.post_log.clear()
         _MockHandler.fail_with_500 = False
         self.server = HTTPServer(("127.0.0.1", self.port), _MockHandler)
         self.thread = threading.Thread(target=self.server.serve_forever,
                                        daemon=True)
         self.thread.start()
-        # Kurzer Warm-up — Server-Socket muss listen() drauf sein
-        time.sleep(0.05)
+        time.sleep(0.05)  # Warm-up — Server-Socket muss listen() drauf sein
         return self
 
     def __exit__(self, *exc):
+        os.environ.pop("S2T_DAEMON_URL", None)
         if self.server is not None:
             self.server.shutdown()
             self.server.server_close()
@@ -95,13 +103,15 @@ class MockDaemon:
 # --- Tests -----------------------------------------------------------------
 
 class TestDaemonClient(unittest.TestCase):
-    # Mock auf Port 17322 — Konflikt-frei zur produktiv laufenden v1.2 (17321)
+    # Mock auf Port 17322 — Konflikt-frei zur produktiv laufenden Instanz
     PORT = 17322
 
     def setUp(self):
-        # Standard-Mock-Antworten je Test zurücksetzen
         _MockHandler.health_body = "state=idle\nlast_error=\nlast_error_ts=0.000\nmode=polished_text\nactive_mode=polished_text\nactive_mode_ui_name=Polished Text\ncycle_loop_size=0\nhotkeys_revision=0\nhotkeys_paused=off\nprebuffer=on"
         _MockHandler.hotkeys_body = "revision=5\nmain=CapsLock\ncycle=F10\nmode_count=2\nmode.0.id=executive\nmode.0.spec=F11\nmode.0.ui_name=Executive\nmode.1.id=warm_friendly\nmode.1.spec=F12\nmode.1.ui_name=Warm"
+
+    def tearDown(self):
+        os.environ.pop("S2T_DAEMON_URL", None)
 
     def test_health_returns_dict(self):
         with MockDaemon(self.PORT):
@@ -112,8 +122,7 @@ class TestDaemonClient(unittest.TestCase):
             self.assertEqual(h["prebuffer"], "on")
 
     def test_health_none_when_unreachable(self):
-        # Kein Mock — Daemon-URL zeigt ins Leere
-        dc.DAEMON_URL = "http://127.0.0.1:1"  # garantiert nichts dahinter
+        os.environ["S2T_DAEMON_URL"] = "http://127.0.0.1:1"  # nichts dahinter
         self.assertIsNone(dc.health())
 
     def test_hotkeys_parsed(self):
@@ -131,7 +140,6 @@ class TestDaemonClient(unittest.TestCase):
     def test_start_mode_includes_json_body(self):
         with MockDaemon(self.PORT):
             self.assertTrue(dc.start_mode("executive"))
-            # Mock hat den POST-Body geloggt
             last = _MockHandler.post_log[-1]
             self.assertTrue(last.startswith("/start|"))
             self.assertIn('"mode": "executive"', last)
@@ -169,8 +177,39 @@ class TestDaemonClient(unittest.TestCase):
             self.assertTrue(dc.wait_alive(timeout_s=1.0))
 
     def test_wait_alive_returns_false_on_timeout(self):
-        dc.DAEMON_URL = "http://127.0.0.1:1"
+        os.environ["S2T_DAEMON_URL"] = "http://127.0.0.1:1"
         self.assertFalse(dc.wait_alive(timeout_s=0.3, poll_interval_s=0.1))
+
+
+class TestDaemonUrlResolution(unittest.TestCase):
+    """Auflösung der Daemon-URL: ENV-Override vor Handshake-Datei."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self._orig_appdata = os.environ.get("APPDATA")
+        os.environ["APPDATA"] = self._tmp.name
+        os.environ.pop("S2T_DAEMON_URL", None)
+
+    def tearDown(self):
+        os.environ.pop("S2T_DAEMON_URL", None)
+        if self._orig_appdata is None:
+            os.environ.pop("APPDATA", None)
+        else:
+            os.environ["APPDATA"] = self._orig_appdata
+        self._tmp.cleanup()
+
+    def test_env_override_takes_precedence(self):
+        os.environ["S2T_DAEMON_URL"] = "http://127.0.0.1:9999"
+        self.assertEqual(dc.daemon_url(), "http://127.0.0.1:9999")
+        self.assertTrue(dc.is_custom_url())
+
+    def test_url_from_handshake_file_when_no_override(self):
+        handshake.write_port(40404, 7)
+        self.assertEqual(dc.daemon_url(), "http://127.0.0.1:40404")
+        self.assertFalse(dc.is_custom_url())
+
+    def test_is_custom_url_false_without_override(self):
+        self.assertFalse(dc.is_custom_url())
 
 
 if __name__ == "__main__":

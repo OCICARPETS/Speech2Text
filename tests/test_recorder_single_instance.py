@@ -1,13 +1,13 @@
-"""Tests für die Single-Instance-Absicherung des Daemons (Session 19).
+"""Tests für die Single-Instance-Absicherung des Daemons.
 
-Hintergrund: `http.server.HTTPServer` setzt allow_reuse_address=1. Auf Windows
-erlaubt SO_REUSEADDR ZWEI erfolgreiche Binds auf denselben Port → ein im
-Startup-Race doppelt gespawnter Daemon stirbt nicht, sondern läuft weiter und
-greift parallel das Mikrofon ab (WASAPI-Contention → Stream-Staleness →
-Audio-Verlust). `_SingleInstanceHTTPServer` setzt allow_reuse_address=False,
-sodass der zweite Bind sauber scheitert.
+Seit Multi-User (Ansatz B) bindet der Daemon Port 0 (OS wählt einen freien Port,
+Adressierung über handshake.write_port) — der Bind ist dann KEIN Single-Instance-
+Schloss mehr. Der Schutz läuft über einen Session-lokalen Named Mutex (`Local\\…`):
+atomar genau ein Daemon je Windows-Session, vom OS bei Prozess-Ende freigegeben
+(auch bei os._exit → kein Stale-Lock). Das ersetzt den alten allow_reuse_address=
+False-Schutz (Session 19), der nur bei festem Port wirkte.
 
-Aufruf: `.venv/Scripts/python.exe -m unittest tests.test_recorder_single_instance -v`
+Aufruf: .venv/Scripts/python.exe -m unittest tests.test_recorder_single_instance -v
 """
 from __future__ import annotations
 
@@ -22,35 +22,47 @@ if str(SRC) not in sys.path:
 
 import recorder  # noqa: E402
 
+# Eigener Mutex-Name für die Tests — kollidiert NICHT mit dem produktiven Daemon.
+_TEST_MUTEX = "Local\\Speech2Text-Daemon-UNITTEST"
 
-class TestSingleInstanceServer(unittest.TestCase):
-    def test_allow_reuse_address_is_false(self):
-        # Klassen-Attribut: ohne das erlaubt Windows den Doppel-Bind.
-        self.assertFalse(recorder._SingleInstanceHTTPServer.allow_reuse_address)
 
-    def test_second_bind_on_same_port_raises(self):
-        """Zweiter Daemon auf demselben Port muss am Bind scheitern (OSError)."""
-        s1 = recorder._SingleInstanceHTTPServer(
-            (recorder.HOST, 0), BaseHTTPRequestHandler)
-        port = s1.server_address[1]
+class TestSingleInstanceMutex(unittest.TestCase):
+    def test_acquire_returns_handle(self):
+        h = recorder._acquire_single_instance_lock(_TEST_MUTEX)
+        self.assertIsNotNone(h)
+        recorder._release_single_instance_lock(h)
+
+    def test_second_acquire_fails_while_first_held(self):
+        """Zweiter Daemon-Lock in derselben Session muss abgewiesen werden."""
+        h1 = recorder._acquire_single_instance_lock(_TEST_MUTEX)
+        self.assertIsNotNone(h1)
         try:
-            with self.assertRaises(OSError):
-                s2 = recorder._SingleInstanceHTTPServer(
-                    (recorder.HOST, port), BaseHTTPRequestHandler)
-                s2.server_close()  # falls wider Erwarten doch gebunden
+            h2 = recorder._acquire_single_instance_lock(_TEST_MUTEX)
+            self.assertIsNone(h2)
         finally:
-            s1.server_close()
+            recorder._release_single_instance_lock(h1)
 
-    def test_first_bind_succeeds_and_releases(self):
-        """Erster Bind klappt; nach server_close ist der Port wieder frei."""
-        s1 = recorder._SingleInstanceHTTPServer(
-            (recorder.HOST, 0), BaseHTTPRequestHandler)
-        port = s1.server_address[1]
-        s1.server_close()
-        # Jetzt muss derselbe Port erneut bindbar sein.
-        s2 = recorder._SingleInstanceHTTPServer(
-            (recorder.HOST, port), BaseHTTPRequestHandler)
-        s2.server_close()
+    def test_reacquirable_after_release(self):
+        """Nach Freigabe (Daemon beendet) ist der Lock wieder erwerbbar."""
+        h1 = recorder._acquire_single_instance_lock(_TEST_MUTEX)
+        recorder._release_single_instance_lock(h1)
+        h2 = recorder._acquire_single_instance_lock(_TEST_MUTEX)
+        self.assertIsNotNone(h2)
+        recorder._release_single_instance_lock(h2)
+
+    def test_release_none_is_safe(self):
+        recorder._release_single_instance_lock(None)  # darf nicht werfen
+
+
+class TestPortZeroBind(unittest.TestCase):
+    def test_bind_port_zero_yields_free_port(self):
+        """Bind auf Port 0 → OS vergibt einen freien Port (> 0)."""
+        s = recorder._SingleInstanceHTTPServer((recorder.HOST, 0),
+                                               BaseHTTPRequestHandler)
+        try:
+            self.assertGreater(s.server_address[1], 0)
+        finally:
+            s.server_close()
 
 
 if __name__ == "__main__":

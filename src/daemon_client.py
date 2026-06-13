@@ -16,21 +16,32 @@ import time
 from urllib import error as urlerr
 from urllib import request as urlreq
 
-# Default-URL — entspricht recorder.py PORT 17321 auf localhost.
-DEFAULT_DAEMON_URL = "http://127.0.0.1:17321"
+import handshake
 
-# Aktive URL — normalerweise = DEFAULT_DAEMON_URL. Override via ENV-Var
-# S2T_DAEMON_URL für Test-Setups, um neben einer laufenden Produktiv-Instanz
-# testen zu können. tray_app erkennt eine Custom-URL und unterdrückt den
-# Auto-Daemon-Start in dem Fall.
-DAEMON_URL = os.environ.get("S2T_DAEMON_URL", DEFAULT_DAEMON_URL)
+# Multi-Session (Ansatz B): KEINE feste Daemon-URL mehr. Der Daemon bindet Port 0
+# und hinterlegt den tatsächlichen Port via handshake.write_port in der per-User-
+# Datei %APPDATA%/Speech2Text/daemon.port; daemon_url() liest ihn dort. So findet
+# der Tray nur seinen EIGENEN Session-Daemon (kein maschinenweiter Fix-Port mehr).
+# ENV-Override S2T_DAEMON_URL hat Vorrang (Test-Setup / parallele Instanz) und
+# unterdrückt im Tray den Auto-Daemon-Start.
+ENV_OVERRIDE = "S2T_DAEMON_URL"
 DEFAULT_TIMEOUT_S = 0.5  # Health-Polls sollen schnell scheitern, wenn Daemon weg ist
 
 
+def daemon_url() -> str:
+    """Aktuelle Daemon-URL — pro Request aufgelöst (folgt einem Port-Wechsel nach
+    Daemon-Neustart automatisch). ENV-Override S2T_DAEMON_URL zuerst, sonst aus der
+    per-User-Handshake-Datei (handshake.resolve_daemon_url; Fallback Default-Port)."""
+    override = os.environ.get(ENV_OVERRIDE)
+    if override:
+        return override
+    return handshake.resolve_daemon_url()
+
+
 def is_custom_url() -> bool:
-    """True, wenn die aktive Daemon-URL per ENV-Var von der Default-URL
-    abweicht. Verwendung: Auto-Daemon-Start nur bei Default-URL erlauben."""
-    return DAEMON_URL != DEFAULT_DAEMON_URL
+    """True, wenn die Daemon-URL per ENV-Override gesetzt ist (Test-Setup). Der
+    Tray unterdrückt dann den Auto-Daemon-Start."""
+    return bool(os.environ.get(ENV_OVERRIDE))
 
 
 def _request(method: str, path: str,
@@ -41,7 +52,7 @@ def _request(method: str, path: str,
     Netzwerk-Fehler. Body als bytes; bei JSON-Bodies vom Aufrufer
     encodet + content_type='application/json; charset=utf-8'.
     """
-    url = f"{DAEMON_URL}{path}"
+    url = f"{daemon_url()}{path}"
     req = urlreq.Request(url, data=body, method=method)
     if content_type:
         req.add_header("Content-Type", content_type)

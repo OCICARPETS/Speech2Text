@@ -34,6 +34,7 @@ import pystray
 
 import config as cfg_mod
 import daemon_client as dc
+import handshake
 from keyboard_hook import HotkeyManager
 from toast import (
     ToastController, TOAST_DURATION_INFO_MS, TOAST_DURATION_MODE_MS,
@@ -78,6 +79,17 @@ def _icon_path() -> Path | None:
         if p.exists():
             return p
     return None
+
+
+def _maybe_clear_stale_port_file() -> bool:
+    """Räumt eine verwaiste daemon.port weg, wenn der hinterlegte PID nicht mehr
+    lebt (harter Daemon-Crash ohne Cleanup). Sonst pollt der Tray gegen einen
+    toten Port. True, wenn aufgeräumt wurde."""
+    entry = handshake.read_port()
+    if entry is not None and not handshake.is_pid_alive(entry[1]):
+        handshake.clear_port_file()
+        return True
+    return False
 
 
 def _daemon_exe_path() -> Path | None:
@@ -246,7 +258,7 @@ class TrayApp:
         # Port zu kollidieren.
         if dc.health() is None:
             if dc.is_custom_url():
-                print(f"[Tray] Daemon offline ({dc.DAEMON_URL}) — "
+                print(f"[Tray] Daemon offline ({dc.daemon_url()}) — "
                       f"Auto-Start unterdrückt (Custom-URL)", flush=True)
             else:
                 self._start_daemon_blocking()
@@ -395,6 +407,9 @@ class TrayApp:
             now = time.monotonic()
             if (not dc.is_custom_url()
                     and now - self._daemon_last_retry > DAEMON_RETRY_INTERVAL_S):
+                if _maybe_clear_stale_port_file():
+                    print("[Tray] verwaiste daemon.port (toter PID) aufgeräumt",
+                          flush=True)
                 exe = _daemon_exe_path()
                 if exe is not None:
                     print("[Tray] Daemon weg — versuche Restart", flush=True)
